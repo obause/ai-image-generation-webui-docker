@@ -1,0 +1,41 @@
+# Copy selected objects from an older B2 backup into the new workspace layout.
+# Use this as a private manifest outside the repository after setting bucket names.
+# The migration command is a dry run unless --execute is supplied.
+source_bucket: "<LEGACY_BUCKET>"
+target_bucket: "<DESTINATION_BUCKET>"
+target_prefix: ""
+transfers: 16
+fast_list: true
+mappings:
+  - source: ComfyUI/models
+    target: models
+  - source: stable-diffusion-webui/models/Stable-diffusion
+    target: models/checkpoints
+  - source: stable-diffusion-webui/models/VAE
+    target: models/vae
+  - source: stable-diffusion-webui/models/VAE-approx
+    target: models/vae_approx
+  - source: stable-diffusion-webui/models/deepbooru
+    target: models/legacy-webui/deepbooru
+  - source: stable-diffusion-webui/models/insightface
+    target: models/legacy-webui/insightface
+  - source: stable-diffusion-webui/models/karlo
+    target: models/legacy-webui/karlo
+  - source: stable-diffusion-webui/embeddings
+    target: models/embeddings
+  - source: InvokeAI/models
+    target: models/invokeai
+  - source: InvokeAI/databases
+    target: invokeai/databases
+  - source: InvokeAI/outputs
+    target: invokeai/outputs
+  - source: ComfyUI/output
+    target: output/comfyui
+  - source: ComfyUI/user
+    target: comfy-user
+  - source: ComfyUI/input
+    target: uploads/comfyui-input
+  - source: train_images
+    target: images/train
+  - source: InvokeAI/configs
+    target: projects/legacy-invokeai-configs

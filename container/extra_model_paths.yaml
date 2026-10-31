@@ -1,0 +1,10 @@
+rp_shared:
+  base_path: /workspace/models
+  checkpoints: checkpoints
+  loras: loras
+  vae: vae
+  embeddings: embeddings
+  controlnet: controlnet
+  upscale_models: upscale_models
+  clip: clip
+  unet: diffusion_models

@@ -1,0 +1,41 @@
+http:
+  port: 8081
+  listen: "0.0.0.0"
+  disableRateLimit: false
+server:
+  database:
+    path: /workspace/filebrowser/database.sqlite
+  sources:
+    - name: models
+      path: /workspace/models
+      config:
+        defaultEnabled: true
+    - name: images
+      path: /workspace/images
+      config:
+        defaultEnabled: true
+    - name: output
+      path: /workspace/output
+      config:
+        defaultEnabled: true
+    - name: invokeai-gallery
+      path: /workspace/invokeai/outputs
+      config:
+        defaultEnabled: true
+    - name: projects
+      path: /workspace/projects
+      config:
+        defaultEnabled: true
+    - name: uploads
+      path: /workspace/uploads
+      config:
+        defaultEnabled: true
+auth:
+  adminUsername: admin
+  methods:
+    password:
+      enabled: true
+      minLength: 12
+      signup: false
+frontend:
+  name: RunPod Workspace Files

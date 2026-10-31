@@ -1,0 +1,14 @@
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+__pycache__/
+*.pyc
+.env*
+*.env
+!.env.example
+config.yaml
+migration.yaml
+migration.local.yaml
+state.json
+*.log
