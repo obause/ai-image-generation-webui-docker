@@ -95,3 +95,26 @@ def test_stale_state_reconciles(config: Config, tmp_path: Path) -> None:
     client.get_pod = once  # type: ignore[method-assign]
     assert life.managed_pod()["id"] == "pod123"  # type: ignore[index]
     assert store.load() is not None
+
+
+def test_up_sends_only_dedicated_pod_b2_key(
+    config: Config, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config.runpod.template_id = None
+    client = FakeClient()
+    client.pod = None
+    client.get_gpu = lambda *_args: {"availability": "HIGH"}  # type: ignore[method-assign]
+    secrets: dict[str, str] = {}
+    client.ensure_secret = lambda name, value: secrets.update({name: value})  # type: ignore[attr-defined]
+    client.create_pod = lambda _config: {"id": "new-pod"}  # type: ignore[attr-defined]
+    monkeypatch.setenv("B2_APPLICATION_KEY_ID", "account-wide-id")
+    monkeypatch.setenv("B2_APPLICATION_KEY", "account-wide-key")
+    monkeypatch.setenv("B2_POD_APPLICATION_KEY_ID", "restricted-id")
+    monkeypatch.setenv("B2_POD_APPLICATION_KEY", "restricted-key")
+    monkeypatch.setenv("WORKSPACE_WEB_PASSWORD", "long-test-password")
+    monkeypatch.setattr("runpod_workspace.lifecycle.verify_pod_b2_key", lambda _bucket: None)
+    life = Lifecycle(config, client, StateStore(tmp_path), FakeSSH)  # type: ignore[arg-type]
+    assert life.up(wait=False, progress=lambda _: None)["id"] == "new-pod"
+    assert secrets["rp_workspace_b2_id"] == "restricted-id"
+    assert secrets["rp_workspace_b2_key"] == "restricted-key"
+    assert "account-wide-key" not in secrets.values()

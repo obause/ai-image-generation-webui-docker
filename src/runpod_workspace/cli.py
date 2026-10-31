@@ -13,7 +13,7 @@ import typer
 from runpod_workspace.config import DEFAULT_CONFIG, Config, ConfigError, load_config
 from runpod_workspace.lifecycle import Lifecycle, LifecycleError, proxy_urls
 from runpod_workspace.runpod import RunPodClient, RunPodError
-from runpod_workspace.secrets import SecretsError, load_local_secrets
+from runpod_workspace.secrets import SecretsError, load_local_secrets, verify_pod_b2_key
 from runpod_workspace.ssh import SSHClient, SSHError
 from runpod_workspace.state import StateError, StateStore
 
@@ -78,7 +78,7 @@ def doctor(ctx: typer.Context) -> None:
     except ConfigError as exc:
         typer.echo(f"Config: FAIL ({exc})")
         raise typer.Exit(1) from exc
-    required_keys = ["RUNPOD_API_KEY", "B2_APPLICATION_KEY_ID", "B2_APPLICATION_KEY"]
+    required_keys = ["RUNPOD_API_KEY", "B2_POD_APPLICATION_KEY_ID", "B2_POD_APPLICATION_KEY"]
     required_keys.append("WORKSPACE_WEB_PASSWORD")
     for key in required_keys:
         found = bool(os.environ.get(key))
@@ -86,12 +86,23 @@ def doctor(ctx: typer.Context) -> None:
             found = bool(os.environ.get(key) and len(os.environ[key]) >= 12)
         typer.echo(f"{key}: {'set' if found else 'MISSING'}")
         ok &= found
+    if os.environ.get("B2_POD_APPLICATION_KEY_ID") and os.environ.get("B2_POD_APPLICATION_KEY"):
+        try:
+            verify_pod_b2_key(config.storage.bucket)
+            typer.echo("Pod B2 scope: destination bucket only; no delete capability")
+        except SecretsError as exc:
+            typer.echo(f"Pod B2 scope: FAIL ({exc})")
+            ok = False
     civitai_status = (
         "set (InvokeAI downloads enabled)"
         if os.environ.get("CIVITAI_API_TOKEN")
         else "optional; not set"
     )
     typer.echo(f"CIVITAI_API_TOKEN: {civitai_status}")
+    migration_key = bool(
+        os.environ.get("B2_APPLICATION_KEY_ID") and os.environ.get("B2_APPLICATION_KEY")
+    )
+    typer.echo(f"B2 migration key: {'set' if migration_key else 'optional; not set'}")
     typer.echo(f"SSH client: {'found' if shutil.which('ssh') else 'MISSING'}")
     ok &= bool(shutil.which("ssh"))
     try:

@@ -3,9 +3,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import httpx
 import pytest
 
-from runpod_workspace.secrets import SecretsError, load_local_secrets
+from runpod_workspace.secrets import SecretsError, load_local_secrets, verify_pod_b2_key
 
 
 def test_private_file_loads_without_revealing_values(
@@ -46,3 +47,29 @@ def test_unknown_key_rejected_without_value(tmp_path: Path) -> None:
     with pytest.raises(SecretsError) as error:
         load_local_secrets(path)
     assert "hidden-test-token" not in str(error.value)
+
+
+@pytest.mark.parametrize("capabilities,valid", [
+    (["listBuckets", "listFiles", "readFiles", "writeFiles"], True),
+    (["listBuckets", "listFiles", "readFiles", "writeFiles", "deleteFiles"], False),
+    (["listBuckets", "listFiles", "readFiles"], False),
+])
+def test_pod_b2_key_rejects_broad_or_incomplete_scope(
+    monkeypatch: pytest.MonkeyPatch, capabilities: list[str], valid: bool
+) -> None:
+    monkeypatch.setenv("B2_POD_APPLICATION_KEY_ID", "restricted-id")
+    monkeypatch.setenv("B2_POD_APPLICATION_KEY", "do-not-print-me")
+
+    def respond(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"apiInfo": {"storageApi": {"allowed": {
+            "buckets": [{"name": "destination", "id": "bucket-id"}],
+            "capabilities": capabilities,
+        }}}})
+
+    transport = httpx.MockTransport(respond)
+    if valid:
+        verify_pod_b2_key("destination", transport)
+    else:
+        with pytest.raises(SecretsError) as error:
+            verify_pod_b2_key("destination", transport)
+        assert "do-not-print-me" not in str(error.value)

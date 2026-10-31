@@ -9,6 +9,7 @@ from typing import Any
 
 from runpod_workspace.config import Config
 from runpod_workspace.runpod import RunPodClient
+from runpod_workspace.secrets import SecretsError, verify_pod_b2_key
 from runpod_workspace.ssh import SSHClient, SSHError
 from runpod_workspace.state import State, StateStore
 
@@ -92,9 +93,13 @@ class Lifecycle:
                         f"exact GPU {self.config.runpod.gpu.id} is unavailable in "
                         f"{self.config.runpod.cloud}; no alternate GPU selected"
                     )
-                for key in ("B2_APPLICATION_KEY_ID", "B2_APPLICATION_KEY"):
+                for key in ("B2_POD_APPLICATION_KEY_ID", "B2_POD_APPLICATION_KEY"):
                     if not os.environ.get(key):
                         raise LifecycleError(f"{key} is missing")
+                try:
+                    verify_pod_b2_key(self.config.storage.bucket)
+                except SecretsError as exc:
+                    raise LifecycleError(str(exc)) from exc
                 if (
                     not os.environ.get("WORKSPACE_WEB_PASSWORD")
                     or len(os.environ["WORKSPACE_WEB_PASSWORD"]) < 12
@@ -102,8 +107,12 @@ class Lifecycle:
                     raise LifecycleError("WORKSPACE_WEB_PASSWORD must have 12+ characters")
                 # Secrets travel in TLS request bodies. The create body contains only references.
                 prefix = self.config.runpod.secret_prefix
-                self.client.ensure_secret(f"{prefix}_b2_id", os.environ["B2_APPLICATION_KEY_ID"])
-                self.client.ensure_secret(f"{prefix}_b2_key", os.environ["B2_APPLICATION_KEY"])
+                self.client.ensure_secret(
+                    f"{prefix}_b2_id", os.environ["B2_POD_APPLICATION_KEY_ID"]
+                )
+                self.client.ensure_secret(
+                    f"{prefix}_b2_key", os.environ["B2_POD_APPLICATION_KEY"]
+                )
                 if os.environ.get("CIVITAI_API_TOKEN"):
                     self.client.ensure_secret(f"{prefix}_civitai", os.environ["CIVITAI_API_TOKEN"])
                 if os.environ.get("WORKSPACE_WEB_PASSWORD"):

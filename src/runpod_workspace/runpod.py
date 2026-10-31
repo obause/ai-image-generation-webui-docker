@@ -176,6 +176,8 @@ class RunPodClient:
                         "RUNPOD_API_KEY",
                         "B2_APPLICATION_KEY_ID",
                         "B2_APPLICATION_KEY",
+                        "B2_POD_APPLICATION_KEY_ID",
+                        "B2_POD_APPLICATION_KEY",
                         "CIVITAI_API_TOKEN",
                         "WORKSPACE_WEB_PASSWORD",
                     ):

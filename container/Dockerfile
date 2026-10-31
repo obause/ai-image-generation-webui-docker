@@ -18,6 +18,7 @@ FROM ubuntu:24.04 AS webtools
 ADD --checksum=sha256:614877cf71005f14ea252bd2d9b1c12237cf7d73681ef150f0dff7f13849fdb5 https://github.com/coder/code-server/releases/download/v4.143.1/code-server-4.143.1-linux-amd64.tar.gz /tmp/code-server.tar.gz
 ADD --checksum=sha256:5710dc6f51d77f1db884eace44f6952286c49f2ce40b6a59af37e0dc7c4a8bbd https://github.com/gtsteffaniak/filebrowser/releases/download/v2.0.2-stable/linux-amd64-filebrowser /usr/local/bin/filebrowser
 ADD --checksum=sha256:b66d11eca8cacbf18a2de6943c6e18a79ffbdc8a3c30aa13a49dc6cfc15d4239 https://github.com/runpod/runpodctl/releases/download/v3.0.1/runpodctl-linux-amd64 /usr/local/bin/runpodctl
+ADD --checksum=sha256:efbfe852181f7191eb3c9043ed1ab49c9b2d0ba045c61c926a5da111c939ec5c https://github.com/rclone/rclone/releases/download/v1.75.2/rclone-v1.75.2-linux-amd64.deb /tmp/rclone.deb
 RUN mkdir -p /opt/code-server \
     && tar -xzf /tmp/code-server.tar.gz -C /opt/code-server --strip-components=1 \
     && chmod 755 /usr/local/bin/filebrowser /usr/local/bin/runpodctl
@@ -30,10 +31,13 @@ COPY --from=swarm-build /opt/SwarmUI /opt/SwarmUI
 COPY --from=webtools /opt/code-server /opt/code-server
 COPY --from=webtools /usr/local/bin/filebrowser /usr/local/bin/filebrowser
 COPY --from=webtools /usr/local/bin/runpodctl /usr/local/bin/runpodctl
+COPY --from=webtools /tmp/rclone.deb /tmp/rclone.deb
 RUN export DEBIAN_FRONTEND=noninteractive \
     && ln -s /usr/share/dotnet/dotnet /usr/local/bin/dotnet \
     && apt-get update \
-    && apt-get install -y --no-install-recommends rclone git openssh-server ca-certificates nginx openssl ffmpeg \
+    && apt-get install -y --no-install-recommends git openssh-server ca-certificates nginx openssl ffmpeg \
+    && dpkg -i /tmp/rclone.deb \
+    && rm -f /tmp/rclone.deb \
     && rm -f /etc/ssh/ssh_host_* \
     && rm -rf /var/lib/apt/lists/*
 
