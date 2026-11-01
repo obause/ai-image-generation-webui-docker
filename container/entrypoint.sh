@@ -43,11 +43,7 @@ nginx -c /opt/runpod-bootstrap/nginx.conf -g 'daemon off;' >> /workspace/.rp-ngi
 # InvokeAI accepts JSON for this settings field. Build it from an optional
 # Pod secret in-process; the token never enters Docker layers, argv, or logs.
 if [[ -n "${CIVITAI_API_TOKEN:-}" ]]; then
-    export INVOKEAI_REMOTE_API_TOKENS="$(python3 - <<'PY'
-import json, os
-print(json.dumps([{"url_regex": "civitai\\.com", "token": os.environ["CIVITAI_API_TOKEN"]}]))
-PY
-)"
+    export INVOKEAI_REMOTE_API_TOKENS="$(python3 /opt/runpod-bootstrap/civitai_tokens.py)"
     unset CIVITAI_API_TOKEN
 fi
 

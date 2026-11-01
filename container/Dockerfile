@@ -71,6 +71,7 @@ COPY --chmod=755 container/start-swarm.sh /opt/runpod-bootstrap/start-swarm.sh
 COPY --chmod=755 container/start-web-tools.sh /opt/runpod-bootstrap/start-web-tools.sh
 COPY container/filebrowser.yaml /opt/runpod-bootstrap/filebrowser.yaml
 COPY container/nginx.conf /opt/runpod-bootstrap/nginx.conf
+COPY container/civitai_tokens.py /opt/runpod-bootstrap/civitai_tokens.py
 COPY --chmod=755 container/worker.py /opt/runpod-bootstrap/worker.py
 
 ENV INVOKEAI_ROOT=/workspace/invokeai \

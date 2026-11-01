@@ -43,6 +43,13 @@ for _ in {1..60}; do
 done
 docker exec "$container" test -f /workspace/.rp-bootstrap-ready
 docker exec "$container" test -f /workspace/models/checkpoints/smoke.safetensors
+docker exec -e CIVITAI_API_TOKEN=fake-smoke-token "$container" \
+    python3 /opt/runpod-bootstrap/civitai_tokens.py | python3 -c '
+import json, re, sys
+entry = json.load(sys.stdin)[0]
+assert entry["token"] == "fake-smoke-token"
+assert re.search(entry["url_regex"], "https://civitai.red/api/download/models/1")
+'
 docker exec -i "$container" python3 - <<'PY'
 import urllib.error
 import urllib.request
