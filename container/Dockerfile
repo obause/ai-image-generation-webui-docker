@@ -37,6 +37,8 @@ RUN export DEBIAN_FRONTEND=noninteractive \
     && apt-get update \
     && apt-get install -y --no-install-recommends git openssh-server ca-certificates nginx openssl ffmpeg \
     && dpkg -i /tmp/rclone.deb \
+    && install -Dm755 /usr/bin/rclone /opt/runpod-bootstrap/bin/rclone \
+    && /opt/runpod-bootstrap/bin/rclone version | head -n 1 \
     && rm -f /tmp/rclone.deb \
     && rm -f /etc/ssh/ssh_host_* \
     && rm -rf /var/lib/apt/lists/*

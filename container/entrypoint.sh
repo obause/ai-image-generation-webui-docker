@@ -7,8 +7,25 @@ rm -f /workspace/.rp-bootstrap-ready
 gosu ubuntu touch /workspace/.rp-bootstrap.log /workspace/.rp-sync.log \
     /workspace/.rp-comfy.log /workspace/.rp-swarm.log \
     /workspace/.rp-code-server.log /workspace/.rp-filebrowser.log
-gosu ubuntu python3 /opt/runpod-bootstrap/worker.py bootstrap 2>&1 \
-    | tee -a /workspace/.rp-bootstrap.log
+
+# RunPod supplies PUBLIC_KEY when startSsh is enabled. Start the control
+# channel first so a failed restore can be inspected without starting apps.
+if [[ -n "${PUBLIC_KEY:-}" ]]; then
+    mkdir -p /run/sshd /root/.ssh
+    printf '%s\n' "$PUBLIC_KEY" > /root/.ssh/authorized_keys
+    chmod 700 /root/.ssh
+    chmod 600 /root/.ssh/authorized_keys
+    ssh-keygen -A >/dev/null 2>&1
+    /usr/sbin/sshd
+    unset PUBLIC_KEY
+fi
+
+if ! gosu ubuntu python3 /opt/runpod-bootstrap/worker.py bootstrap 2>&1 \
+    | tee -a /workspace/.rp-bootstrap.log; then
+    echo "Required B2 bootstrap failed; Pod held for rp logs and rp ssh" \
+        | tee -a /workspace/.rp-bootstrap.log >&2
+    exec sleep infinity
+fi
 gosu ubuntu mkdir -p /workspace/models/invokeai /workspace/invokeai/outputs \
     /workspace/output/comfyui /workspace/comfy-user /workspace/swarmui-data \
     /workspace/images /workspace/projects /workspace/uploads /workspace/code-server \
@@ -28,17 +45,6 @@ printf 'workspace:%s\n' "$(printf '%s\n' "$WORKSPACE_WEB_PASSWORD" | openssl pas
 chgrp www-data /run/rp-web.htpasswd
 chmod 640 /run/rp-web.htpasswd
 nginx -c /opt/runpod-bootstrap/nginx.conf -g 'daemon off;' >> /workspace/.rp-nginx.log 2>&1 &
-
-# RunPod supplies PUBLIC_KEY when startSsh is enabled. sshd is in the image.
-if [[ -n "${PUBLIC_KEY:-}" ]]; then
-    mkdir -p /run/sshd /root/.ssh
-    printf '%s\n' "$PUBLIC_KEY" > /root/.ssh/authorized_keys
-    chmod 700 /root/.ssh
-    chmod 600 /root/.ssh/authorized_keys
-    ssh-keygen -A >/dev/null 2>&1
-    /usr/sbin/sshd
-    unset PUBLIC_KEY
-fi
 
 # InvokeAI accepts JSON for this settings field. Build it from an optional
 # Pod secret in-process; the token never enters Docker layers, argv, or logs.

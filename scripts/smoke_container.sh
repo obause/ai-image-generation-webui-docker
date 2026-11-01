@@ -14,6 +14,7 @@ trap cleanup EXIT
 cat > "$temporary/rclone" <<'SH'
 #!/bin/sh
 case "$1" in
+    version) echo 'rclone v1.75.2 (smoke fake)' ;;
     lsf) exit 0 ;;
     copy)
         mkdir -p "$3/checkpoints"
@@ -27,7 +28,7 @@ chmod 755 "$temporary/rclone"
 config='{"storage":{"bucket":"fake-bucket","transfers":1,"fast_list":false,"restore":[{"name":"models","remote":"models","local":"/workspace/models","mode":"copy","required":true}],"backup":[{"name":"models","remote":"models","local":"/workspace/models","mode":"copy","interval_seconds":300}]},"application":{"swarmui":false,"code_server":true,"filebrowser":true,"shared_models_path":"/workspace/models"}}'
 
 docker run -d --rm --platform linux/amd64 --name "$container" \
-    -v "$temporary/rclone:/usr/bin/rclone:ro" \
+    -v "$temporary/rclone:/opt/runpod-bootstrap/bin/rclone:ro" \
     -e B2_APPLICATION_KEY_ID=fake-id -e B2_APPLICATION_KEY=fake-key \
     -e WORKSPACE_WEB_PASSWORD=dummy-smoke-password-123 \
     -e RP_DEADLINE_AT=2099-01-01T00:00:00+00:00 \

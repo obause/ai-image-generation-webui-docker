@@ -20,6 +20,7 @@ ROOT = Path("/workspace")
 READY = ROOT / ".rp-bootstrap-ready"
 STATUS = ROOT / ".rp-sync-status.json"
 LOCK = ROOT / ".rp-backup.lock"
+RCLONE = Path("/opt/runpod-bootstrap/bin/rclone")
 
 
 def log(message: str) -> None:
@@ -46,7 +47,7 @@ def rclone(args: list[str], cfg: dict) -> bool:
     if cfg["fast_list"]:
         options.append("--fast-list")
     result = subprocess.run(
-        ["rclone", *args, *options],
+        [str(RCLONE), *args, *options],
         env=rclone_env(),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -88,17 +89,26 @@ def backup_lock():
 
 def bootstrap() -> int:
     cfg = settings()["storage"]
-    if not shutil_which("rclone"):
-        log("rclone is missing")
+    if not RCLONE.is_file():
+        log("pinned rclone is missing")
+        write_status("bootstrap", False)
         return 1
+    version = subprocess.run([str(RCLONE), "version"], capture_output=True, text=True)
+    if version.returncode or not version.stdout.splitlines():
+        log("pinned rclone cannot start")
+        write_status("bootstrap", False)
+        return 1
+    log(f"Using {version.stdout.splitlines()[0]}")
     try:
         rclone_env()
     except RuntimeError as exc:
         log(str(exc))
+        write_status("bootstrap", False)
         return 1
     log("Checking B2 connectivity")
     if not rclone(["lsf", f"rp:{cfg['bucket']}", "--max-depth", "1"], cfg):
         log("B2 connectivity failed")
+        write_status("bootstrap", False)
         return 1
     failed_required = False
     for mapping in cfg["restore"]:
@@ -124,6 +134,7 @@ def bootstrap() -> int:
         failed_required |= mapping["required"] and not success
     if failed_required:
         log("Required restore failed; application startup blocked")
+        write_status("bootstrap", False)
         return 1
     READY.write_text(datetime.now(UTC).isoformat())
     write_status("bootstrap", True)

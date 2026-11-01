@@ -69,14 +69,14 @@ cp config/config.example.yaml ~/.config/runpod-workspace/config.yaml
 rp --config ./my-config.yaml doctor
 ```
 
-The example config points to `ghcr.io/obause/ai-image-generation-webui-docker:0.1.2`. Publish a release with that tag to run the [release workflow](.github/workflows/release-image.yml), which builds the amd64 image and publishes it to GitHub Container Registry using the repository's `GITHUB_TOKEN`; no personal registry token is needed in the workflow. Verify the resulting package is public so RunPod can pull it without registry credentials. For a manual build, use:
+The example config points to `ghcr.io/obause/ai-image-generation-webui-docker:0.1.3`. Publish a release with that tag to run the [release workflow](.github/workflows/release-image.yml), which builds the amd64 image and publishes it to GitHub Container Registry using the repository's `GITHUB_TOKEN`; no personal registry token is needed in the workflow. Verify the resulting package is public so RunPod can pull it without registry credentials. For a manual build, use:
 
 ```bash
 docker buildx build --platform linux/amd64 -f container/Dockerfile \
-  -t 'ghcr.io/obause/ai-image-generation-webui-docker:0.1.2' --push .
+  -t 'ghcr.io/obause/ai-image-generation-webui-docker:0.1.3' --push .
 ```
 
-The wrapper's base is pinned to the amd64 digest of the [official InvokeAI 6.14.2 CUDA image](https://github.com/invoke-ai/InvokeAI/pkgs/container/invokeai). Its OCI config has `ENTRYPOINT ["/opt/invokeai/docker-entrypoint.sh"]`, `CMD ["invokeai-web"]`, working directory `/opt/invokeai`, and no declared exposed ports or volumes. InvokeAI 6.14.2 uses PyTorch 2.7.1 with CUDA 12.8, which [supports Blackwell GPUs](https://pytorch.org/blog/pytorch-2-7/). ComfyUI and SwarmUI are built from pinned source commits into the wrapper. [rclone 1.75.2](https://rclone.org/downloads/), [code-server](https://github.com/coder/code-server/releases/tag/v4.143.1), and [FileBrowser Quantum](https://github.com/gtsteffaniak/filebrowser/releases/tag/v2.0.2-stable) are added from versioned release artifacts with checked SHA-256 digests. The sample exposes InvokeAI on 9090, ComfyUI on 8188, SwarmUI on 7801, code-server on 8443, FileBrowser on 8081, and SSH on 22.
+The wrapper's base is pinned to the amd64 digest of the [official InvokeAI 6.14.2 CUDA image](https://github.com/invoke-ai/InvokeAI/pkgs/container/invokeai). Its OCI config has `ENTRYPOINT ["/opt/invokeai/docker-entrypoint.sh"]`, `CMD ["invokeai-web"]`, working directory `/opt/invokeai`, and no declared exposed ports or volumes. InvokeAI 6.14.2 uses PyTorch 2.7.1 with CUDA 12.8, which [supports Blackwell GPUs](https://pytorch.org/blog/pytorch-2-7/). ComfyUI and SwarmUI are built from pinned source commits into the wrapper. [rclone 1.75.2](https://rclone.org/downloads/), [code-server](https://github.com/coder/code-server/releases/tag/v4.143.1), and [FileBrowser Quantum](https://github.com/gtsteffaniak/filebrowser/releases/tag/v2.0.2-stable) are added from versioned release artifacts with checked SHA-256 digests. The bootstrap executes its private pinned rclone binary because RunPod replaced `/usr/bin/rclone` with an older version during the first live test. The sample exposes InvokeAI on 9090, ComfyUI on 8188, SwarmUI on 7801, code-server on 8443, FileBrowser on 8081, and SSH on 22.
 
 SwarmUI's pinned source still depends on ImageSharp 3.1.12, which [has published security advisories](https://github.com/SixLabors/ImageSharp/security/advisories). A trial upgrade to 3.2.0 failed because that release requires a Six Labors build license. The SwarmUI endpoint is protected by the nginx password gate; review the upstream dependency and licensing before widening access or accepting untrusted uploads there.
 
@@ -140,7 +140,7 @@ Backups use `rclone copy` by default. Deleting a local file therefore does not d
 ## Recovery
 
 - **Pod disappeared:** `rp status` repairs stale state. Start a new Pod with `rp up`; it restores B2 data.
-- **B2 unavailable or required restore fails:** the original application does not start. The Pod remains for `rp logs` and `rp ssh` inspection. Retry after fixing B2 by starting a new Pod or manually rerunning bootstrap; do not assume local files survived a restart.
+- **B2 unavailable or required restore fails:** the original application does not start. SSH starts before the restore, and the Pod remains running for `rp logs` and `rp ssh` inspection. Retry after fixing B2 by starting a new Pod or manually rerunning bootstrap; do not assume local files survived a restart.
 - **SSH or bootstrap slow:** `rp up` retries until its configured timeout. A timeout keeps the Pod for debugging.
 - **Final backup fails:** `rp down` exits nonzero and leaves the Pod alive. Run `rp logs`, `rp sync`, then `rp down`. `--force` bypasses that safeguard.
 - **Forgot `rp down`:** the Pod-side deadline backs up and tries to delete the Pod. Check `rp status`; a failed backup or self-delete leaves it running and can continue billing.

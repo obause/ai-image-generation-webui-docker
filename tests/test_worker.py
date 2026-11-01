@@ -18,7 +18,11 @@ def worker(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> ModuleType:
     monkeypatch.setattr(module, "READY", tmp_path / "ready")
     monkeypatch.setattr(module, "STATUS", tmp_path / "status.json")
     monkeypatch.setattr(module, "LOCK", tmp_path / "backup.lock")
-    monkeypatch.setattr(module, "shutil_which", lambda _: "/usr/bin/rclone")
+    binary = tmp_path / "rclone"
+    binary.write_text("#!/bin/sh\necho 'rclone v1.75.2 (test)'\n")
+    binary.chmod(0o755)
+    monkeypatch.setattr(module, "RCLONE", binary)
+    monkeypatch.setattr(module, "shutil_which", lambda _: "/usr/local/bin/runpodctl")
     monkeypatch.setattr(module, "rclone_env", lambda: {})
     monkeypatch.setattr(
         module,
