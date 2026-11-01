@@ -59,7 +59,9 @@ def load_local_secrets(path: Path = DEFAULT_SECRETS) -> None:
             os.environ[key] = value
 
 
-def verify_pod_b2_key(bucket: str, transport: httpx.BaseTransport | None = None) -> None:
+def verify_pod_b2_key(
+    bucket: str, transport: httpx.BaseTransport | None = None, *, allow_delete: bool = False
+) -> None:
     """Refuse a broad or destructive B2 key before it can be uploaded to RunPod."""
     key_id = os.environ.get("B2_POD_APPLICATION_KEY_ID")
     key = os.environ.get("B2_POD_APPLICATION_KEY")
@@ -83,9 +85,13 @@ def verify_pod_b2_key(bucket: str, transport: httpx.BaseTransport | None = None)
     except (KeyError, TypeError, ValueError, IndexError):
         raise SecretsError("dedicated Pod B2 key scope response is invalid") from None
     required = {"listBuckets", "listFiles", "readFiles", "writeFiles"}
-    dangerous = {"deleteFiles", "deleteBuckets", "writeKeys", "deleteKeys"}
+    if allow_delete:
+        required.add("deleteFiles")
+    dangerous = {"deleteBuckets", "writeKeys", "deleteKeys"}
+    if not allow_delete:
+        dangerous.add("deleteFiles")
     if not matches or not required <= capabilities or capabilities & dangerous:
         raise SecretsError(
             "dedicated Pod B2 key must be restricted to the configured bucket "
-            "with read/list/write and no delete or key-management permissions"
+            "with exactly the permissions needed by the configured copy/sync mappings"
         )

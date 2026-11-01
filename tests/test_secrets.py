@@ -73,3 +73,25 @@ def test_pod_b2_key_rejects_broad_or_incomplete_scope(
         with pytest.raises(SecretsError) as error:
             verify_pod_b2_key("destination", transport)
         assert "do-not-print-me" not in str(error.value)
+
+
+def test_explicit_sync_requires_delete_capability(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("B2_POD_APPLICATION_KEY_ID", "restricted-id")
+    monkeypatch.setenv("B2_POD_APPLICATION_KEY", "do-not-print-me")
+
+    def respond(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"apiInfo": {"storageApi": {"allowed": {
+            "buckets": [{"name": "destination", "id": "bucket-id"}],
+            "capabilities": ["listBuckets", "listFiles", "readFiles", "writeFiles", "deleteFiles"],
+        }}}})
+
+    verify_pod_b2_key("destination", httpx.MockTransport(respond), allow_delete=True)
+
+    def missing_delete(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"apiInfo": {"storageApi": {"allowed": {
+            "buckets": [{"name": "destination", "id": "bucket-id"}],
+            "capabilities": ["listBuckets", "listFiles", "readFiles", "writeFiles"],
+        }}}})
+
+    with pytest.raises(SecretsError):
+        verify_pod_b2_key("destination", httpx.MockTransport(missing_delete), allow_delete=True)

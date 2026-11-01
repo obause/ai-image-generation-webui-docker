@@ -112,7 +112,10 @@ def test_up_sends_only_dedicated_pod_b2_key(
     monkeypatch.setenv("B2_POD_APPLICATION_KEY_ID", "restricted-id")
     monkeypatch.setenv("B2_POD_APPLICATION_KEY", "restricted-key")
     monkeypatch.setenv("WORKSPACE_WEB_PASSWORD", "long-test-password")
-    monkeypatch.setattr("runpod_workspace.lifecycle.verify_pod_b2_key", lambda _bucket: None)
+    monkeypatch.setattr(
+        "runpod_workspace.lifecycle.verify_pod_b2_key",
+        lambda _bucket, **_kwargs: None,
+    )
     life = Lifecycle(config, client, StateStore(tmp_path), FakeSSH)  # type: ignore[arg-type]
     assert life.up(wait=False, progress=lambda _: None)["id"] == "new-pod"
     assert secrets["rp_workspace_b2_id"] == "restricted-id"

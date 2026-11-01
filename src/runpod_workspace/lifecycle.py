@@ -97,7 +97,10 @@ class Lifecycle:
                     if not os.environ.get(key):
                         raise LifecycleError(f"{key} is missing")
                 try:
-                    verify_pod_b2_key(self.config.storage.bucket)
+                    verify_pod_b2_key(
+                        self.config.storage.bucket,
+                        allow_delete=self.config.uses_destructive_sync(),
+                    )
                 except SecretsError as exc:
                     raise LifecycleError(str(exc)) from exc
                 if (

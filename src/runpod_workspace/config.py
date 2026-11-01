@@ -189,6 +189,11 @@ class Config(StrictModel):
             :16
         ]
 
+    def uses_destructive_sync(self) -> bool:
+        return any(mapping.mode == "sync" for mapping in self.storage.restore) or any(
+            mapping.mode == "sync" for mapping in self.storage.backup
+        )
+
     def container_settings(self) -> dict[str, object]:
         return {
             "storage": self.storage.model_dump(),

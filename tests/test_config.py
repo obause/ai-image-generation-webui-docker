@@ -38,9 +38,12 @@ def test_invalid_config(config: Config, change: tuple[str, str, object]) -> None
 
 
 def test_sync_must_be_explicit(config: Config) -> None:
+    assert not config.uses_destructive_sync()
     raw = config.model_dump()
     raw["storage"]["backup"][0]["mode"] = "sync"
-    assert Config.model_validate(raw).storage.backup[0].mode == "sync"
+    changed = Config.model_validate(raw)
+    assert changed.storage.backup[0].mode == "sync"
+    assert changed.uses_destructive_sync()
 
 
 def test_remote_escape_rejected(config: Config) -> None:

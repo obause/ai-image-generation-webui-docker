@@ -104,8 +104,12 @@ def doctor(ctx: typer.Context) -> None:
         ok &= found
     if os.environ.get("B2_POD_APPLICATION_KEY_ID") and os.environ.get("B2_POD_APPLICATION_KEY"):
         try:
-            verify_pod_b2_key(config.storage.bucket)
-            typer.echo("Pod B2 scope: destination bucket only; no delete capability")
+            destructive = config.uses_destructive_sync()
+            verify_pod_b2_key(config.storage.bucket, allow_delete=destructive)
+            typer.echo(
+                "Pod B2 scope: destination bucket only; "
+                + ("delete allowed for explicit sync" if destructive else "no delete capability")
+            )
         except SecretsError as exc:
             typer.echo(f"Pod B2 scope: FAIL ({exc})")
             ok = False
