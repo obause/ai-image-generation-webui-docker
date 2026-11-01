@@ -106,7 +106,10 @@ cp config/migration.example.yaml ~/.config/runpod-workspace/migration.yaml
 # Edit bucket placeholders in the private manifest.
 uv run python scripts/migrate_b2.py --manifest ~/.config/runpod-workspace/migration.yaml
 # After reviewing the mapping, repeat with --execute to copy.
+uv run python scripts/verify_b2.py --manifest ~/.config/runpod-workspace/migration.yaml
 ```
+
+The verifier checks each source prefix against its destination with rclone's one-way hash/size check and prints only mapping numbers and pass/fail. It does not list private filenames. Use `--start` and `--end` to check a subset while a long migration is still copying later mappings.
 
 If the old backup is a single archive rather than normal B2 objects, extract it to a temporary local location first and populate the destination tree with `rclone copy`. The helper does not unpack archives. Keep `models.required: true` only after the new bucket contains at least one model file. For very large image history, omit or narrow the `images` restore mapping until the Pod disk is large enough. Both buckets currently keep all file versions; later overwrites can retain old versions and increase storage use. Review B2 lifecycle settings after confirming the migrated data, without deleting the old backup prematurely.
 
