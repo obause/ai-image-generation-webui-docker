@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from datetime import UTC, datetime, timedelta
+from itertools import groupby
 from typing import Any, cast
 from urllib.parse import quote
 
@@ -173,19 +175,24 @@ class RunPodClient:
     def delete_pod(self, pod_id: str) -> None:
         self._request("DELETE", f"/pods/{quote(pod_id, safe='')}")
 
-    def log_lines(self, pod_id: str, *, follow: bool = False) -> list[str]:
+    def log_lines(
+        self, pod_id: str, *, follow: bool = False, source: str | None = "container"
+    ) -> list[str]:
         """Read v2 SSE logs, used when SSH is unavailable during bootstrap."""
         lines: list[str] = []
+        deadline = time.monotonic() + 5
         try:
             with self.http.stream(
                 "GET",
                 f"/pods/{quote(pod_id, safe='')}/logs",
-                params={"source": "container", "tail": 100},
+                params={"source": source, "tail": 100} if source else {"tail": 100},
                 timeout=None if follow else 5,
             ) as response:
                 if response.status_code >= 400:
                     raise RunPodError(f"RunPod logs returned HTTP {response.status_code}")
                 for item in response.iter_lines():
+                    if not follow and time.monotonic() >= deadline:
+                        break
                     if not item.startswith("data: "):
                         continue
                     try:
@@ -213,4 +220,8 @@ class RunPodClient:
             pass  # Historical backfill finished; SSE remained open without new events.
         except httpx.HTTPError as exc:
             raise RunPodError("RunPod log stream failed") from exc
-        return lines
+        return [
+            f"{line} (repeated {count} times)" if count > 1 else line
+            for line, group in groupby(lines)
+            if (count := sum(1 for _ in group))
+        ]

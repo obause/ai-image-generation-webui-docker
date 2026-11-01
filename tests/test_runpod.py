@@ -62,6 +62,23 @@ def test_log_stream_redacts_local_secrets(monkeypatch: pytest.MonkeyPatch) -> No
     assert lines == ["bad: [REDACTED] and [REDACTED]"]
 
 
+def test_system_logs_dedupe_repeated_pull_progress() -> None:
+    seen: list[str] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(
+            200,
+            text='data: {"line":"Extracting"}\n\ndata: {"line":"Extracting"}\n\n',
+            headers={"content-type": "text/event-stream"},
+        )
+
+    with RunPodClient("key", httpx.MockTransport(respond)) as client:
+        lines = client.log_lines("pod123", source=None)
+    assert "source=" not in seen[0]
+    assert lines == ["Extracting (repeated 2 times)"]
+
+
 def test_optional_civitai_secret_is_reference(
     config: Config, monkeypatch: pytest.MonkeyPatch
 ) -> None:

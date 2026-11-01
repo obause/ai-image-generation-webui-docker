@@ -309,7 +309,7 @@ def logs(
                 ssh.run("test -r /workspace/.rp-bootstrap.log", timeout=10)
             except SSHError:
                 typer.echo("SSH unavailable; reading Pod container logs from RunPod")
-                for line in client.log_lines(str(pod["id"]), follow=follow):
+                for line in client.log_lines(str(pod["id"]), follow=follow, source=None):
                     typer.echo(line)
                 return
             cmd = (
