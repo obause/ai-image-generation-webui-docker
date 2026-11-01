@@ -73,3 +73,16 @@ def test_dedicated_key_works_without_agent(monkeypatch: Any, tmp_path: Path) -> 
     args = SSHClient(pod, state_dir=tmp_path).args()
     assert "IdentityAgent=none" in args
     assert str(tmp_path / "id_ed25519") in args
+
+
+def test_ssh_host_pin_changes_with_pod_image(tmp_path: Path) -> None:
+    pod = {
+        "id": "pod-1",
+        "image": "example/image:one",
+        "ssh": {"direct": {"host": "127.0.0.1", "port": 22, "username": "root"}},
+    }
+    first = SSHClient(pod, state_dir=tmp_path).host_key_alias
+    assert first == SSHClient(pod, state_dir=tmp_path).host_key_alias
+    pod["image"] = "example/image:two"
+    second = SSHClient(pod, state_dir=tmp_path).host_key_alias
+    assert first != second

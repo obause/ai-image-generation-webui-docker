@@ -142,6 +142,7 @@ Backups use `rclone copy` by default. Deleting a local file therefore does not d
 - **Pod disappeared:** `rp status` repairs stale state. Start a new Pod with `rp up`; it restores B2 data.
 - **B2 unavailable or required restore fails:** the original application does not start. SSH starts before the restore, and the Pod remains running for `rp logs` and `rp ssh` inspection. Retry after fixing B2 by starting a new Pod or manually rerunning bootstrap; do not assume local files survived a restart.
 - **SSH or bootstrap slow:** `rp up` retries until its configured timeout. A timeout keeps the Pod for debugging.
+- **SSH host key after an image update:** each wrapper image identity gets its own SSH host-key pin, so updating a Pod image does not overwrite the earlier pin. If a container restarts with the same image and SSH reports a changed key, verify the restart and remove only that Pod image's stale entry from `~/.local/state/runpod-workspace/known_hosts` before reconnecting.
 - **Final backup fails:** `rp down` exits nonzero and leaves the Pod alive. Run `rp logs`, `rp sync`, then `rp down`. `--force` bypasses that safeguard.
 - **Forgot `rp down`:** the Pod-side deadline backs up and tries to delete the Pod. Check `rp status`; a failed backup or self-delete leaves it running and can continue billing.
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import subprocess
@@ -175,6 +176,9 @@ class SSHClient:
         if not direct:
             raise SSHError("direct SSH endpoint is unavailable; ensure 22/tcp is exposed")
         self.pod_id = str(pod["id"])
+        image = str(pod.get("image", ""))
+        image_hash = hashlib.sha256(image.encode()).hexdigest()[:12]
+        self.host_key_alias = f"runpod-{self.pod_id}-{image_hash}"
         self.host = str(direct["host"])
         self.port = int(direct["port"])
         self.username = str(direct["username"])
@@ -189,7 +193,7 @@ class SSHClient:
             "-p",
             str(self.port),
             "-o",
-            f"HostKeyAlias=runpod-{self.pod_id}",
+            f"HostKeyAlias={self.host_key_alias}",
             "-o",
             f"UserKnownHostsFile={self.state_dir / 'known_hosts'}",
             "-o",
