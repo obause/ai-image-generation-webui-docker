@@ -14,7 +14,12 @@ from runpod_workspace.config import DEFAULT_CONFIG, Config, ConfigError, load_co
 from runpod_workspace.lifecycle import Lifecycle, LifecycleError, proxy_urls
 from runpod_workspace.runpod import RunPodClient, RunPodError
 from runpod_workspace.secrets import SecretsError, load_local_secrets, verify_pod_b2_key
-from runpod_workspace.ssh import SSHClient, SSHError, matching_agent_keys
+from runpod_workspace.ssh import (
+    SSHClient,
+    SSHError,
+    matching_agent_keys,
+    prepare_ssh_identity,
+)
 from runpod_workspace.state import StateError, StateStore
 
 app = typer.Typer(no_args_is_help=True, help="Ephemeral RunPod workspace with B2 persistence")
@@ -44,6 +49,17 @@ def _config(ctx: typer.Context) -> Config:
 def _service(ctx: typer.Context) -> tuple[Config, RunPodClient, Lifecycle]:
     config = _config(ctx)
     client = RunPodClient()
+    try:
+        keys_result = client.get_ssh_keys()
+    except RunPodError:
+        client.http.close()
+        raise
+    keys = keys_result.get("keys", []) if isinstance(keys_result, dict) else keys_result
+    ctx.obj["ssh_identity_ready"] = (
+        prepare_ssh_identity(keys)
+        if isinstance(keys, list) and all(isinstance(key, str) for key in keys)
+        else False
+    )
     return config, client, Lifecycle(config, client, StateStore())
 
 
@@ -176,6 +192,8 @@ def up(
     try:
         _, client, life = _service(ctx)
         with client:
+            if not ctx.obj["ssh_identity_ready"]:
+                raise LifecycleError("no matching local SSH agent key; cannot safely control Pod")
             pod = life.up(wait=not no_wait)
         typer.echo(f"Pod: {pod['id']}")
         typer.echo(f"GPU: {config.runpod.gpu.id}")
