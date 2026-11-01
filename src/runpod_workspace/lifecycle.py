@@ -159,12 +159,12 @@ class Lifecycle:
                         ports.append(8081)
                     for port in ports:
                         check += (
-                            " && python3 -c 'import urllib.request; "
+                            " && /opt/venv/bin/python -c 'import urllib.request; "
                             f'urllib.request.urlopen("http://127.0.0.1:{port}", timeout=5)\''
                         )
                     if self.config.application.swarmui:
                         check += (
-                            " && python3 -c 'import urllib.request; "
+                            " && /opt/venv/bin/python -c 'import urllib.request; "
                             'urllib.request.urlopen("http://127.0.0.1:17801", timeout=5)\''
                         )
                     ssh.run(check, timeout=20)

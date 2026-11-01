@@ -69,11 +69,11 @@ cp config/config.example.yaml ~/.config/runpod-workspace/config.yaml
 rp --config ./my-config.yaml doctor
 ```
 
-The example config points to `ghcr.io/obause/ai-image-generation-webui-docker:0.1.3`. Publish a release with that tag to run the [release workflow](.github/workflows/release-image.yml), which builds the amd64 image and publishes it to GitHub Container Registry using the repository's `GITHUB_TOKEN`; no personal registry token is needed in the workflow. Verify the resulting package is public so RunPod can pull it without registry credentials. For a manual build, use:
+The example config points to `ghcr.io/obause/ai-image-generation-webui-docker:0.1.4`. Publish a release with that tag to run the [release workflow](.github/workflows/release-image.yml), which builds the amd64 image and publishes it to GitHub Container Registry using the repository's `GITHUB_TOKEN`; no personal registry token is needed in the workflow. Verify the resulting package is public so RunPod can pull it without registry credentials. For a manual build, use:
 
 ```bash
 docker buildx build --platform linux/amd64 -f container/Dockerfile \
-  -t 'ghcr.io/obause/ai-image-generation-webui-docker:0.1.3' --push .
+  -t 'ghcr.io/obause/ai-image-generation-webui-docker:0.1.4' --push .
 ```
 
 The wrapper's base is pinned to the amd64 digest of the [official InvokeAI 6.14.2 CUDA image](https://github.com/invoke-ai/InvokeAI/pkgs/container/invokeai). Its OCI config has `ENTRYPOINT ["/opt/invokeai/docker-entrypoint.sh"]`, `CMD ["invokeai-web"]`, working directory `/opt/invokeai`, and no declared exposed ports or volumes. InvokeAI 6.14.2 uses PyTorch 2.7.1 with CUDA 12.8, which [supports Blackwell GPUs](https://pytorch.org/blog/pytorch-2-7/). ComfyUI and SwarmUI are built from pinned source commits into the wrapper. [rclone 1.75.2](https://rclone.org/downloads/), [code-server](https://github.com/coder/code-server/releases/tag/v4.143.1), and [FileBrowser Quantum](https://github.com/gtsteffaniak/filebrowser/releases/tag/v2.0.2-stable) are added from versioned release artifacts with checked SHA-256 digests. The bootstrap executes its private pinned rclone binary because RunPod replaced `/usr/bin/rclone` with an older version during the first live test. The sample exposes InvokeAI on 9090, ComfyUI on 8188, SwarmUI on 7801, code-server on 8443, FileBrowser on 8081, and SSH on 22.

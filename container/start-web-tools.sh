@@ -7,7 +7,7 @@ if [[ -z "${WORKSPACE_WEB_PASSWORD:-}" ]]; then
 fi
 
 mkdir -p /workspace/code-server/user-data /workspace/code-server/extensions \
-    /workspace/filebrowser /workspace/images /workspace/projects /workspace/uploads
+    /workspace/filebrowser/cache /workspace/images /workspace/projects /workspace/uploads
 export PASSWORD="$WORKSPACE_WEB_PASSWORD"
 export FILEBROWSER_ADMIN_PASSWORD="$WORKSPACE_WEB_PASSWORD"
 unset WORKSPACE_WEB_PASSWORD

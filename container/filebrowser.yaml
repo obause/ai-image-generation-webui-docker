@@ -3,6 +3,7 @@ http:
   listen: "0.0.0.0"
   disableRateLimit: false
 server:
+  cacheDir: /workspace/filebrowser/cache
   database:
     path: /workspace/filebrowser/database.sqlite
   sources:

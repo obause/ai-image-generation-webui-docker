@@ -46,6 +46,7 @@ docker exec "$container" test -f /workspace/models/checkpoints/smoke.safetensors
 docker exec -i "$container" python3 - <<'PY'
 import urllib.error
 import urllib.request
+import time
 
 try:
     urllib.request.urlopen("http://127.0.0.1:8188/", timeout=5)
@@ -53,5 +54,15 @@ except urllib.error.HTTPError as error:
     assert error.code == 401, error.code
 else:
     raise AssertionError("generation port is not password protected")
+
+for _ in range(30):
+    try:
+        response = urllib.request.urlopen("http://127.0.0.1:8081/", timeout=5)
+        assert response.status == 200, response.status
+        break
+    except urllib.error.URLError:
+        time.sleep(1)
+else:
+    raise AssertionError("FileBrowser did not start")
 PY
-echo "Container bootstrap and web gate smoke test passed"
+echo "Container bootstrap, web gate, and FileBrowser smoke test passed"

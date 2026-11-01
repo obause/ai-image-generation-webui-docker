@@ -97,6 +97,22 @@ def test_stale_state_reconciles(config: Config, tmp_path: Path) -> None:
     assert store.load() is not None
 
 
+def test_wait_ready_uses_image_python(config: Config, tmp_path: Path) -> None:
+    life, _, _ = make_life(config, tmp_path)
+    commands: list[str] = []
+
+    class CapturingSSH(FakeSSH):
+        def run(self, command: str, timeout: int = 120) -> str:
+            commands.append(command)
+            return ""
+
+    life.ssh_factory = CapturingSSH  # type: ignore[assignment]
+    life.wait_ready("pod123", progress=lambda _: None)
+    assert commands
+    assert "/opt/venv/bin/python -c" in commands[0]
+    assert "python3 -c" not in commands[0]
+
+
 def test_up_sends_only_dedicated_pod_b2_key(
     config: Config, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
