@@ -1,0 +1,7 @@
+0:
+	type: comfyui_api
+	title: ComfyUI
+	enabled: true
+	settings:
+		Address: http://127.0.0.1:18188
+		AllowIdle: false

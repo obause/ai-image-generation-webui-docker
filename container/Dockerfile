@@ -61,6 +61,8 @@ RUN rm -rf /opt/SwarmUI/Models /opt/SwarmUI/Output \
     && chown -R ubuntu:ubuntu /opt/SwarmUI /opt/ComfyUI
 
 COPY container/extra_model_paths.yaml /opt/ComfyUI/extra_model_paths.yaml
+COPY container/swarm-settings.fds /opt/runpod-bootstrap/swarm-settings.fds
+COPY container/swarm-backends.fds /opt/runpod-bootstrap/swarm-backends.fds
 COPY --chmod=755 container/entrypoint.sh /opt/runpod-bootstrap/entrypoint.sh
 COPY --chmod=755 container/start-comfy.sh /opt/runpod-bootstrap/start-comfy.sh
 COPY --chmod=755 container/start-swarm.sh /opt/runpod-bootstrap/start-swarm.sh
