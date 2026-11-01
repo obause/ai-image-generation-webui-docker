@@ -119,6 +119,8 @@ The sample's optional `swarmui-data`, `invokeai`, and `output` restores permit a
 
 ## Daily use
 
+When the Pod is running, `rp up` and `rp status` print its service URLs. SwarmUI (7801), ComfyUI (8188), and InvokeAI (9090) use username `workspace`; FileBrowser (8081) uses `admin`; code-server (8443) asks for only a password. Every service uses your private `WORKSPACE_WEB_PASSWORD` value. The CLI prints the login hints but never the password.
+
 ```bash
 uv run rp doctor
 uv run rp setup-ssh  # one-time if no usable registered SSH key

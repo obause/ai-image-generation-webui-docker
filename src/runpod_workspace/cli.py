@@ -79,6 +79,14 @@ def _warn_sync(config: Config) -> None:
                 )
 
 
+def _show_login_hints(config: Config) -> None:
+    typer.echo("Generation UIs: username workspace; password WORKSPACE_WEB_PASSWORD")
+    if config.application.code_server:
+        typer.echo("code-server: password WORKSPACE_WEB_PASSWORD")
+    if config.application.filebrowser:
+        typer.echo("FileBrowser: username admin; password WORKSPACE_WEB_PASSWORD")
+
+
 @app.command()
 def doctor(ctx: typer.Context) -> None:
     """Check local setup and RunPod catalog access without creating resources."""
@@ -226,6 +234,7 @@ def up(
         typer.echo(f"Bootstrap: {'completed' if not no_wait else 'pending'}")
         for url in proxy_urls(str(pod["id"]), pod.get("ports") or config.runpod.ports):
             typer.echo(f"URL: {url}")
+        _show_login_hints(config)
         typer.echo(f"Auto deadline: {config.runpod.terminate_after} (after successful backup)")
     except (LifecycleError, RunPodError, SSHError, StateError) as exc:
         _fail(exc)
@@ -264,6 +273,7 @@ def status(ctx: typer.Context) -> None:
             typer.echo(f"Auto deadline: {config.runpod.terminate_after}")
             for url in proxy_urls(str(pod["id"]), pod.get("ports") or config.runpod.ports):
                 typer.echo(f"URL: {url}")
+            _show_login_hints(config)
             try:
                 ssh = SSHClient(pod)
                 result = ssh.run(
