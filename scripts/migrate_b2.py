@@ -144,42 +144,52 @@ def main() -> int:
             parser.error("source and destination prefixes overlap")
         mappings.append((source, target))
     print(f"{'COPY' if args.execute else 'DRY RUN'}: {len(mappings)} mapping(s)", flush=True)
+    # Direct B2 copy is efficient for ordinary objects. Large B2 copy_part
+    # requests can remain pending indefinitely, so stream those through the
+    # local machine. The ranges overlap; the second pass skips an identical
+    # destination object, avoiding a boundary gap.
+    passes = (
+        ("B2 server copy (<4 GiB)", ["--max-size", "4Gi"]),
+        (
+            "stream large objects (>3 GiB)",
+            ["--min-size", "3Gi", "--disable", "Copy", "--b2-chunk-size", "64Mi"],
+        ),
+    )
     for source, target in mappings:
         print(f"{source} -> {target}", flush=True)
-        command = [
-            "rclone",
-            "copy",
-            source,
-            target,
-            "--config",
-            "/dev/null",
-            "--transfers",
-            str(transfers),
-            "--stats",
-            "30s",
-            "--stats-log-level",
-            "NOTICE",
-            "--stats-one-line-date",
-            # B2's default 4 GiB server-side copy parts can remain pending for
-            # hours. Smaller parts expose progress and bound each API call.
-            "--b2-copy-cutoff",
-            "512Mi",
-            "--retries",
-            "2",
-            "--low-level-retries",
-            "3",
-        ]
-        if fast_list:
-            command.append("--fast-list")
-        if not args.execute:
-            command.extend(("--dry-run", "--quiet"))
-        result = subprocess.run(command, env=env, check=False)
-        if result.returncode:
-            print(
-                "Migration stopped after a failed copy; original B2 data was not deleted",
-                file=sys.stderr,
-            )
-            return result.returncode
+        for label, filter_args in passes:
+            print(f"  {label}", flush=True)
+            command = [
+                "rclone",
+                "copy",
+                source,
+                target,
+                "--config",
+                "/dev/null",
+                "--transfers",
+                str(transfers),
+                "--stats",
+                "30s",
+                "--stats-log-level",
+                "NOTICE",
+                "--stats-one-line-date",
+                "--retries",
+                "2",
+                "--low-level-retries",
+                "3",
+                *filter_args,
+            ]
+            if fast_list:
+                command.append("--fast-list")
+            if not args.execute:
+                command.extend(("--dry-run", "--quiet"))
+            result = subprocess.run(command, env=env, check=False)
+            if result.returncode:
+                print(
+                    "Migration stopped after a failed copy; original B2 data was not deleted",
+                    file=sys.stderr,
+                )
+                return result.returncode
     print(
         "Migration completed" if args.execute else "Dry run completed; rerun with --execute to copy"
     )

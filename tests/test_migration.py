@@ -9,7 +9,7 @@ from pathlib import Path
 def test_migration_is_dry_run_and_keeps_secrets_off_argv(tmp_path: Path) -> None:
     fake_rclone = tmp_path / "rclone"
     args_file = tmp_path / "args"
-    fake_rclone.write_text('#!/bin/sh\nprintf \'%s\\n\' "$@" > "$RP_TEST_ARGS_FILE"\n')
+    fake_rclone.write_text('#!/bin/sh\nprintf \'%s\\n\' "$@" >> "$RP_TEST_ARGS_FILE"\n')
     fake_rclone.chmod(0o755)
     env = os.environ.copy()
     env.update(
@@ -38,7 +38,9 @@ def test_migration_is_dry_run_and_keeps_secrets_off_argv(tmp_path: Path) -> None
     )
     assert result.returncode == 0
     assert "--dry-run" in args_file.read_text()
-    assert "512Mi" in args_file.read_text()
+    assert "--max-size\n4Gi" in args_file.read_text()
+    assert "--min-size\n3Gi" in args_file.read_text()
+    assert "--disable\nCopy" in args_file.read_text()
     assert "--stats-log-level" in args_file.read_text()
     assert "rp:newbucket/models/checkpoints" in result.stdout
     assert "do-not-print-me" not in result.stdout + result.stderr + args_file.read_text()
@@ -113,7 +115,7 @@ def test_migration_optional_destination_prefix(tmp_path: Path) -> None:
 def test_migration_manifest_is_dry_run_and_preserves_secret_boundary(tmp_path: Path) -> None:
     fake_rclone = tmp_path / "rclone"
     args_file = tmp_path / "args"
-    fake_rclone.write_text('#!/bin/sh\nprintf \'%s\\n\' "$@" > "$RP_TEST_ARGS_FILE"\n')
+    fake_rclone.write_text('#!/bin/sh\nprintf \'%s\\n\' "$@" >> "$RP_TEST_ARGS_FILE"\n')
     fake_rclone.chmod(0o755)
     manifest = tmp_path / "migration.yaml"
     manifest.write_text(
