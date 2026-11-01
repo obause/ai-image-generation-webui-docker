@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -12,6 +13,42 @@ from runpod_workspace.state import STATE_DIR
 
 class SSHError(Exception):
     pass
+
+
+def matching_agent_keys(registered: list[str]) -> int:
+    """Count RunPod public keys available from the SSH agent selected by ssh config."""
+    try:
+        config = subprocess.run(
+            ["ssh", "-G", "runpod.invalid"], capture_output=True, text=True, timeout=5, check=False
+        )
+        agent = next(
+            (
+                line.split(" ", 1)[1]
+                for line in config.stdout.splitlines()
+                if line.startswith("identityagent ")
+            ),
+            None,
+        )
+        env = os.environ.copy()
+        if agent == "none":
+            return 0
+        if agent and agent != "SSH_AUTH_SOCK":
+            env["SSH_AUTH_SOCK"] = os.path.expanduser(agent)
+        keys = subprocess.run(
+            ["ssh-add", "-L"], env=env, capture_output=True, text=True, timeout=5, check=False
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return 0
+    if keys.returncode:
+        return 0
+
+    def blob(line: str) -> str:
+        parts = line.split()
+        return parts[1] if len(parts) >= 2 else ""
+
+    available = {value for line in keys.stdout.splitlines() if (value := blob(line))}
+    expected = {value for line in registered if (value := blob(line))}
+    return len(available & expected)
 
 
 class SSHClient:

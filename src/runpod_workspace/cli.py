@@ -14,7 +14,7 @@ from runpod_workspace.config import DEFAULT_CONFIG, Config, ConfigError, load_co
 from runpod_workspace.lifecycle import Lifecycle, LifecycleError, proxy_urls
 from runpod_workspace.runpod import RunPodClient, RunPodError
 from runpod_workspace.secrets import SecretsError, load_local_secrets, verify_pod_b2_key
-from runpod_workspace.ssh import SSHClient, SSHError
+from runpod_workspace.ssh import SSHClient, SSHError, matching_agent_keys
 from runpod_workspace.state import StateError, StateStore
 
 app = typer.Typer(no_args_is_help=True, help="Ephemeral RunPod workspace with B2 persistence")
@@ -135,6 +135,10 @@ def doctor(ctx: typer.Context) -> None:
                     f"SSH keys: {len(keys) if isinstance(keys, list) else 'unknown'} registered"
                 )
                 ok &= bool(keys)
+                if isinstance(keys, list) and all(isinstance(key, str) for key in keys):
+                    matches = matching_agent_keys(keys)
+                    typer.echo(f"Local SSH agent: {matches} matching registered key(s)")
+                    ok &= matches > 0
                 if state:
                     pod = client.get_pod(state.pod_id)
                     typer.echo(
