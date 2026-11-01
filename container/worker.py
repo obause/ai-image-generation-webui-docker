@@ -31,6 +31,25 @@ def settings() -> dict:
     return json.loads(os.environ["RP_CONFIG_JSON"])
 
 
+def restore_pod_environment(init_env: Path = Path("/proc/1/environ")) -> None:
+    """Use Pod init's environment for a root SSH backup, without argv or disk copies."""
+    needed = {"RP_CONFIG_JSON", "B2_APPLICATION_KEY_ID", "B2_APPLICATION_KEY"}
+    if all(os.environ.get(key) for key in needed):
+        return
+    try:
+        entries = init_env.read_bytes().split(b"\0")
+    except OSError as exc:
+        raise RuntimeError("Pod environment unavailable for backup") from exc
+    for entry in entries:
+        key, separator, value = entry.partition(b"=")
+        if separator and key.decode() in needed:
+            name = key.decode()
+            if not os.environ.get(name):
+                os.environ[name] = value.decode()
+    if not all(os.environ.get(key) for key in needed):
+        raise RuntimeError("Pod backup environment is incomplete")
+
+
 def rclone_env() -> dict[str, str]:
     for key in ("B2_APPLICATION_KEY_ID", "B2_APPLICATION_KEY"):
         if not os.environ.get(key):
@@ -143,6 +162,11 @@ def bootstrap() -> int:
 
 
 def backup(name: str | None = None) -> int:
+    try:
+        restore_pod_environment()
+    except RuntimeError as exc:
+        log(str(exc))
+        return 1
     cfg = settings()["storage"]
     mappings = [m for m in cfg["backup"] if name is None or m["name"] == name]
     if not mappings:

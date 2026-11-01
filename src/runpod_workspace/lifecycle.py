@@ -188,7 +188,7 @@ class Lifecycle:
                 raise LifecycleError("Pod is not running")
             if name and name not in [m.name for m in self.config.storage.backup]:
                 raise LifecycleError(f"unknown backup mapping: {name}")
-            command = "/opt/runpod-bootstrap/worker.py backup"
+            command = "/opt/venv/bin/python /opt/runpod-bootstrap/worker.py backup"
             if name:
                 command += f" {name}"
             command += " >> /workspace/.rp-sync.log 2>&1"
@@ -210,7 +210,8 @@ class Lifecycle:
                 try:
                     progress("Running final B2 backup...")
                     self.ssh_factory(self.client.get_pod(pod_id) or pod).run(
-                        "/opt/runpod-bootstrap/worker.py backup >> /workspace/.rp-sync.log 2>&1",
+                        "/opt/venv/bin/python /opt/runpod-bootstrap/worker.py backup "
+                        ">> /workspace/.rp-sync.log 2>&1",
                         timeout=7200,
                     )
                 except SSHError as exc:

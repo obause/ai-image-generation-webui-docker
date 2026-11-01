@@ -27,7 +27,7 @@ chmod 755 "$temporary/rclone"
 
 config='{"storage":{"bucket":"fake-bucket","transfers":1,"fast_list":false,"restore":[{"name":"models","remote":"models","local":"/workspace/models","mode":"copy","required":true}],"backup":[{"name":"models","remote":"models","local":"/workspace/models","mode":"copy","interval_seconds":300}]},"application":{"swarmui":false,"code_server":true,"filebrowser":true,"shared_models_path":"/workspace/models"}}'
 
-docker run -d --rm --platform linux/amd64 --name "$container" \
+docker run -d --rm --init --platform linux/amd64 --name "$container" \
     -v "$temporary/rclone:/opt/runpod-bootstrap/bin/rclone:ro" \
     -e B2_APPLICATION_KEY_ID=fake-id -e B2_APPLICATION_KEY=fake-key \
     -e WORKSPACE_WEB_PASSWORD=dummy-smoke-password-123 \
@@ -65,4 +65,6 @@ for _ in range(30):
 else:
     raise AssertionError("FileBrowser did not start")
 PY
-echo "Container bootstrap, web gate, and FileBrowser smoke test passed"
+docker exec -e RP_CONFIG_JSON= -e B2_APPLICATION_KEY_ID= -e B2_APPLICATION_KEY= \
+    "$container" /opt/venv/bin/python /opt/runpod-bootstrap/worker.py backup
+echo "Container bootstrap, web gate, FileBrowser, and remote backup smoke test passed"

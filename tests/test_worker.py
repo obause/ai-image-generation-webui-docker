@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sqlite3
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -10,6 +11,9 @@ import pytest
 
 @pytest.fixture
 def worker(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> ModuleType:
+    monkeypatch.setenv("RP_CONFIG_JSON", "{}")
+    monkeypatch.setenv("B2_APPLICATION_KEY_ID", "test-id")
+    monkeypatch.setenv("B2_APPLICATION_KEY", "test-secret")
     spec = importlib.util.spec_from_file_location("worker", Path("container/worker.py"))
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
@@ -136,6 +140,22 @@ def test_remote_uses_workspace_prefix(worker: ModuleType) -> None:
     assert worker.remote({"bucket": "mybucket", "prefix": "workspace-v1"}, "models") == (
         "rp:mybucket/workspace-v1/models"
     )
+
+
+def test_ssh_backup_reads_only_needed_init_environment(
+    worker: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    keys = ("RP_CONFIG_JSON", "B2_APPLICATION_KEY_ID", "B2_APPLICATION_KEY")
+    for key in keys:
+        monkeypatch.delenv(key, raising=False)
+    init_env = tmp_path / "init-env"
+    init_env.write_bytes(
+        b"RP_CONFIG_JSON={}\0B2_APPLICATION_KEY_ID=test-id\0"
+        b"B2_APPLICATION_KEY=test-secret\0UNRELATED=ignored\0"
+    )
+    worker.restore_pod_environment(init_env)
+    assert all(os.environ.get(key) for key in keys)
+    assert "UNRELATED" not in os.environ
 
 
 def test_self_delete_uses_current_runpodctl_command(

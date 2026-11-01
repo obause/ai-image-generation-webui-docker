@@ -113,6 +113,37 @@ def test_wait_ready_uses_image_python(config: Config, tmp_path: Path) -> None:
     assert "python3 -c" not in commands[0]
 
 
+def test_sync_uses_image_python(config: Config, tmp_path: Path) -> None:
+    life, _, _ = make_life(config, tmp_path)
+    commands: list[str] = []
+
+    class CapturingSSH(FakeSSH):
+        def run(self, command: str, timeout: int = 120) -> str:
+            commands.append(command)
+            return ""
+
+    life.ssh_factory = CapturingSSH  # type: ignore[assignment]
+    life.sync()
+    assert commands[0].startswith("/opt/venv/bin/python /opt/runpod-bootstrap/worker.py backup")
+
+
+def test_down_runs_backup_before_delete(config: Config, tmp_path: Path) -> None:
+    life, client, store = make_life(config, tmp_path)
+    commands: list[str] = []
+
+    class CapturingSSH(FakeSSH):
+        def run(self, command: str, timeout: int = 120) -> str:
+            assert not client.deleted
+            commands.append(command)
+            return ""
+
+    life.ssh_factory = CapturingSSH  # type: ignore[assignment]
+    life.down(progress=lambda _: None)
+    assert commands[0].startswith("/opt/venv/bin/python /opt/runpod-bootstrap/worker.py backup")
+    assert client.deleted
+    assert store.load() is None
+
+
 def test_up_sends_only_dedicated_pod_b2_key(
     config: Config, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
