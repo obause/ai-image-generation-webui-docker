@@ -149,15 +149,16 @@ def main() -> int:
     # local machine. The ranges overlap; the second pass skips an identical
     # destination object, avoiding a boundary gap.
     passes = (
-        ("B2 server copy (<4 GiB)", ["--max-size", "4Gi"]),
+        ("B2 server copy (<4 GiB)", ["--max-size", "4Gi"], transfers),
         (
             "stream large objects (>3 GiB)",
             ["--min-size", "3Gi", "--disable", "Copy", "--b2-chunk-size", "64Mi"],
+            min(transfers, 4),
         ),
     )
     for source, target in mappings:
         print(f"{source} -> {target}", flush=True)
-        for label, filter_args in passes:
+        for label, filter_args, parallelism in passes:
             print(f"  {label}", flush=True)
             command = [
                 "rclone",
@@ -167,7 +168,7 @@ def main() -> int:
                 "--config",
                 "/dev/null",
                 "--transfers",
-                str(transfers),
+                str(parallelism),
                 "--stats",
                 "30s",
                 "--stats-log-level",
