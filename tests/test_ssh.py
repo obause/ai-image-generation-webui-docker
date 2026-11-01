@@ -7,7 +7,9 @@ from typing import Any
 from runpod_workspace.ssh import (
     SSHClient,
     can_sign_ssh_identity,
+    generate_dedicated_key,
     matching_agent_keys,
+    matching_local_keys,
     prepare_ssh_identity,
 )
 
@@ -57,3 +59,17 @@ def test_paid_pod_guard_rejects_locked_agent(monkeypatch: Any, tmp_path: Path) -
 
     monkeypatch.setattr(subprocess, "run", failed_sign)
     assert not can_sign_ssh_identity(tmp_path)
+
+
+def test_dedicated_key_works_without_agent(monkeypatch: Any, tmp_path: Path) -> None:
+    monkeypatch.setattr("runpod_workspace.ssh._agent_public_keys", lambda: [])
+    monkeypatch.setattr("runpod_workspace.ssh._agent_environment", lambda: None)
+    public = generate_dedicated_key(tmp_path)
+    assert generate_dedicated_key(tmp_path) == public
+    assert matching_local_keys([public], tmp_path) == 1
+    assert prepare_ssh_identity([public], tmp_path)
+    assert can_sign_ssh_identity(tmp_path)
+    pod = {"id": "pod-1", "ssh": {"direct": {"host": "127.0.0.1", "port": 22, "username": "root"}}}
+    args = SSHClient(pod, state_dir=tmp_path).args()
+    assert "IdentityAgent=none" in args
+    assert str(tmp_path / "id_ed25519") in args

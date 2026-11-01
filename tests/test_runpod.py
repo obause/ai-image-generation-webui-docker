@@ -107,3 +107,21 @@ def test_gpu_availability_query_uses_cuda_floor() -> None:
     with RunPodClient("key", httpx.MockTransport(respond)) as client:
         client.get_gpu("NVIDIA GeForce RTX 5090", 1, "COMMUNITY", "12.8")
     assert "minCudaVersion=12.8" in seen[0]
+
+
+def test_add_ssh_key_preserves_registered_keys() -> None:
+    existing = "ssh-ed25519 existing first"
+    new = "ssh-ed25519 new-key runpod-workspace"
+    writes: list[dict] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(200, json={"keys": [existing]})
+        body = json.loads(request.content)
+        writes.append(body)
+        return httpx.Response(200, json=body)
+
+    with RunPodClient("key", httpx.MockTransport(respond)) as client:
+        client.add_ssh_key(new)
+        client.add_ssh_key(existing)
+    assert writes == [{"keys": [existing, new]}]

@@ -101,6 +101,22 @@ class RunPodClient:
     def get_ssh_keys(self) -> Any:
         return self._request("GET", "/account/ssh-keys")
 
+    def add_ssh_key(self, public_key: str) -> None:
+        """Register one public key while retaining every existing account key."""
+        current = self.get_ssh_keys()
+        keys = current.get("keys") if isinstance(current, dict) else None
+        if not isinstance(keys, list) or not all(isinstance(key, str) for key in keys):
+            raise RunPodError("RunPod SSH key response has an unexpected shape")
+        new_blob = public_key.split()[1] if len(public_key.split()) >= 2 else ""
+        if not new_blob:
+            raise RunPodError("invalid SSH public key")
+        if any(len(key.split()) >= 2 and key.split()[1] == new_blob for key in keys):
+            return
+        updated = self._request("PUT", "/account/ssh-keys", json={"keys": [*keys, public_key]})
+        returned = updated.get("keys") if isinstance(updated, dict) else None
+        if not isinstance(returned, list) or len(returned) != len(keys) + 1:
+            raise RunPodError("RunPod did not confirm the updated SSH key set")
+
     def list_secrets(self) -> list[dict[str, Any]]:
         return cast("list[dict[str, Any]]", self._request("GET", "/account/secrets")["secrets"])
 

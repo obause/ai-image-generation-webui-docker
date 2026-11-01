@@ -68,10 +68,59 @@ def matching_agent_keys(registered: list[str]) -> int:
     return len(available & expected)
 
 
+def dedicated_key_paths(state_dir: Path = STATE_DIR) -> tuple[Path, Path]:
+    return state_dir / "id_ed25519", state_dir / "id_ed25519.pub"
+
+
+def generate_dedicated_key(state_dir: Path = STATE_DIR) -> str:
+    """Create a private local key once; return only its public half."""
+    private, public = dedicated_key_paths(state_dir)
+    state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if private.exists() != public.exists():
+        raise SSHError("dedicated SSH key pair is incomplete; inspect it manually")
+    if not private.exists():
+        try:
+            result = subprocess.run(
+                [
+                    "ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C",
+                    "runpod-workspace", "-f", str(private),
+                ],
+                capture_output=True, text=True, timeout=30, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise SSHError("SSH key generation failed") from exc
+        if result.returncode:
+            raise SSHError("SSH key generation failed")
+    if private.stat().st_mode & 0o077:
+        raise SSHError("dedicated private SSH key permissions are too broad")
+    return public.read_text().strip()
+
+
+def _dedicated_public_key(state_dir: Path) -> str | None:
+    private, public = dedicated_key_paths(state_dir)
+    if not private.is_file() or not public.is_file():
+        return None
+    if private.stat().st_mode & 0o077:
+        return None
+    return public.read_text().strip()
+
+
+def matching_local_keys(registered: list[str], state_dir: Path = STATE_DIR) -> int:
+    count = matching_agent_keys(registered)
+    dedicated = _dedicated_public_key(state_dir)
+    expected = {_blob(line) for line in registered}
+    if dedicated and _blob(dedicated) in expected:
+        count += 1
+    return count
+
+
 def prepare_ssh_identity(registered: list[str], state_dir: Path = STATE_DIR) -> bool:
     """Pin a matching public key so SSH does not try unrelated agent identities."""
     expected = {value for line in registered if (value := _blob(line))}
-    selected = next((line for line in _agent_public_keys() if _blob(line) in expected), None)
+    dedicated = _dedicated_public_key(state_dir)
+    selected = dedicated if dedicated and _blob(dedicated) in expected else None
+    if selected is None:
+        selected = next((line for line in _agent_public_keys() if _blob(line) in expected), None)
     if selected is None:
         return False
     state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -91,6 +140,18 @@ def prepare_ssh_identity(registered: list[str], state_dir: Path = STATE_DIR) -> 
 def can_sign_ssh_identity(state_dir: Path = STATE_DIR) -> bool:
     """Confirm the selected agent can sign before creating a paid Pod."""
     identity = state_dir / "identity.pub"
+    private, _ = dedicated_key_paths(state_dir)
+    dedicated = _dedicated_public_key(state_dir)
+    if dedicated and identity.is_file() and _blob(dedicated) == _blob(identity.read_text()):
+        try:
+            result = subprocess.run(
+                ["ssh-keygen", "-Y", "sign", "-n", "runpod-workspace", "-f", str(private)],
+                input="runpod-workspace preflight", capture_output=True, text=True,
+                timeout=10, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        return result.returncode == 0
     env = _agent_environment()
     if env is None or not identity.is_file():
         return False
@@ -138,7 +199,14 @@ class SSHClient:
         ]
         identity = self.state_dir / "identity.pub"
         if identity.is_file():
-            result += ["-o", "IdentitiesOnly=yes", "-i", str(identity)]
+            private, _ = dedicated_key_paths(self.state_dir)
+            dedicated = _dedicated_public_key(self.state_dir)
+            if dedicated and _blob(dedicated) == _blob(identity.read_text()):
+                result += [
+                    "-o", "IdentityAgent=none", "-o", "IdentitiesOnly=yes", "-i", str(private),
+                ]
+            else:
+                result += ["-o", "IdentitiesOnly=yes", "-i", str(identity)]
         if not interactive:
             result += ["-o", "BatchMode=yes"]
         else:

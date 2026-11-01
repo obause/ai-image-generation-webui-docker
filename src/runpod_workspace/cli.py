@@ -18,7 +18,8 @@ from runpod_workspace.ssh import (
     SSHClient,
     SSHError,
     can_sign_ssh_identity,
-    matching_agent_keys,
+    generate_dedicated_key,
+    matching_local_keys,
     prepare_ssh_identity,
 )
 from runpod_workspace.state import StateError, StateStore
@@ -157,8 +158,8 @@ def doctor(ctx: typer.Context) -> None:
                 )
                 ok &= bool(keys)
                 if isinstance(keys, list) and all(isinstance(key, str) for key in keys):
-                    matches = matching_agent_keys(keys)
-                    typer.echo(f"Local SSH agent: {matches} matching registered key(s)")
+                    matches = matching_local_keys(keys)
+                    typer.echo(f"Local SSH keys: {matches} matching registered key(s)")
                     ok &= matches > 0
                 if state:
                     pod = client.get_pod(state.pod_id)
@@ -170,6 +171,22 @@ def doctor(ctx: typer.Context) -> None:
             ok = False
     typer.echo("Auto termination: Pod-side deadline (RunPod native flag unavailable)")
     raise typer.Exit(0 if ok else 1)
+
+
+@app.command("setup-ssh")
+def setup_ssh() -> None:
+    """Create a dedicated local SSH key and register its public half with RunPod."""
+    try:
+        public_key = generate_dedicated_key()
+        with RunPodClient() as client:
+            client.add_ssh_key(public_key)
+            keys_result = client.get_ssh_keys()
+            keys = keys_result.get("keys", []) if isinstance(keys_result, dict) else []
+            if not prepare_ssh_identity(keys) or not can_sign_ssh_identity():
+                raise SSHError("dedicated SSH key registration could not be verified")
+        typer.echo("Dedicated RunPod SSH key registered and ready")
+    except (RunPodError, SSHError) as exc:
+        _fail(exc)
 
 
 @app.command()
@@ -198,10 +215,10 @@ def up(
         _, client, life = _service(ctx)
         with client:
             if not ctx.obj["ssh_identity_ready"]:
-                raise LifecycleError("no matching local SSH agent key; cannot safely control Pod")
+                raise LifecycleError("no matching local SSH key; run `rp setup-ssh`")
             if not can_sign_ssh_identity():
                 raise LifecycleError(
-                    "matching SSH key cannot sign; unlock the key manager before creating a Pod"
+                    "matching SSH key cannot sign; run `rp setup-ssh` or unlock the key manager"
                 )
             pod = life.up(wait=not no_wait)
         typer.echo(f"Pod: {pod['id']}")
