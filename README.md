@@ -12,6 +12,8 @@ B2 connectivity check → rclone restore → readiness marker
 
 This ordering prevents the applications from downloading missing files before the B2 restore. A failed required restore blocks every application process and leaves the Pod for debugging. The wrapper preserves InvokeAI's inspected entrypoint behavior after bootstrap, including its user switch and root setup.
 
+The `0.1.5` image was tested on a paid Secure Cloud RTX 5090 Pod. During restore, the readiness marker was absent and the generation apps were closed. After restore, the five web services responded, the shared model root contained 193 files, periodic and manual backups succeeded, and `rp down` backed up successfully before confirming Pod deletion. The old B2 bucket remains intact after the 16-mapping migration; the destination passed one-way hash/size verification.
+
 ## Current RunPod interfaces
 
 The implementation targets [RunPod REST API v2](https://api.runpod.io/v2/openapi.json). It uses `POST /v2/pods` with an explicit wrapper `image`, GPU, disk, ports and entrypoint override. A public `templateId` is optional; creating from the image directly avoids needing a RunPod template ID. The API also exposes Pod listing/get/delete, templates, GPU availability, direct SSH endpoints, account secrets and registered SSH keys. The [RunPod CLI reference](https://github.com/runpod/runpodctl/blob/main/docs/runpodctl_pod_create.md) still describes Pod creation, but this project does not parse CLI text or put credentials in process arguments.
