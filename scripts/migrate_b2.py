@@ -143,9 +143,9 @@ def main() -> int:
         ):
             parser.error("source and destination prefixes overlap")
         mappings.append((source, target))
-    print(f"{'COPY' if args.execute else 'DRY RUN'}: {len(mappings)} mapping(s)")
+    print(f"{'COPY' if args.execute else 'DRY RUN'}: {len(mappings)} mapping(s)", flush=True)
     for source, target in mappings:
-        print(f"{source} -> {target}")
+        print(f"{source} -> {target}", flush=True)
         command = [
             "rclone",
             "copy",
@@ -157,6 +157,17 @@ def main() -> int:
             str(transfers),
             "--stats",
             "30s",
+            "--stats-log-level",
+            "NOTICE",
+            "--stats-one-line-date",
+            # B2's default 4 GiB server-side copy parts can remain pending for
+            # hours. Smaller parts expose progress and bound each API call.
+            "--b2-copy-cutoff",
+            "512Mi",
+            "--retries",
+            "2",
+            "--low-level-retries",
+            "3",
         ]
         if fast_list:
             command.append("--fast-list")

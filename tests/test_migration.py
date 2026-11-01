@@ -38,6 +38,8 @@ def test_migration_is_dry_run_and_keeps_secrets_off_argv(tmp_path: Path) -> None
     )
     assert result.returncode == 0
     assert "--dry-run" in args_file.read_text()
+    assert "512Mi" in args_file.read_text()
+    assert "--stats-log-level" in args_file.read_text()
     assert "rp:newbucket/models/checkpoints" in result.stdout
     assert "do-not-print-me" not in result.stdout + result.stderr + args_file.read_text()
 

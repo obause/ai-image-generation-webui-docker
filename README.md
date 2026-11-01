@@ -99,7 +99,7 @@ uv run python scripts/inspect_b2.py '<LEGACY_BUCKET>' --max-depth 3
 
 The observed backup has ComfyUI models, older WebUI models, InvokeAI managed models and database, about 21 GB of InvokeAI output images, and smaller ComfyUI output/training collections. The checked [example manifest](config/migration.example.yaml) maps these into one model root and persistent image folders. It excludes the old virtual environments, app installations, logs, and an incomplete Hugging Face cache. The selected copy is roughly 187 GB. InvokeAI may need to migrate its legacy database and rescan some models on first launch; keep the old bucket until that has been verified in a live Pod.
 
-The helper defaults to a dry run and uses `rclone copy` for B2-to-B2 migration. It never deletes the legacy backup. Copy the manifest to a private path, insert the two bucket names, and review each source and target. `--execute` performs the copy. The key must be allowed to read the old bucket and write the destination.
+The helper defaults to a dry run and uses `rclone copy` for B2-to-B2 migration. It never deletes the legacy backup. Copy the manifest to a private path, insert the two bucket names, and review each source and target. `--execute` performs the copy. The key must be allowed to read the old bucket and write the destination. Migration uses 512 MiB B2 server-side copy parts and prints aggregate progress every 30 seconds; the smaller parts avoid very long individual B2 copy requests observed with the default 4 GiB size.
 
 ```bash
 cp config/migration.example.yaml ~/.config/runpod-workspace/migration.yaml
