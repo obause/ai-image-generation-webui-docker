@@ -16,8 +16,8 @@ class SSHError(Exception):
     pass
 
 
-def _agent_public_keys() -> list[str]:
-    """Read public keys from the agent selected by SSH config for Pod hosts."""
+def _agent_environment() -> dict[str, str] | None:
+    """Select the same agent OpenSSH will use for a Pod host."""
     try:
         config = subprocess.run(
             ["ssh", "-G", "runpod.invalid"], capture_output=True, text=True, timeout=5, check=False
@@ -32,9 +32,20 @@ def _agent_public_keys() -> list[str]:
         )
         env = os.environ.copy()
         if agent == "none":
-            return []
+            return None
         if agent and agent != "SSH_AUTH_SOCK":
             env["SSH_AUTH_SOCK"] = os.path.expanduser(agent)
+        return env
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def _agent_public_keys() -> list[str]:
+    """Read public keys from the agent selected by SSH config for Pod hosts."""
+    env = _agent_environment()
+    if env is None:
+        return []
+    try:
         keys = subprocess.run(
             ["ssh-add", "-L"], env=env, capture_output=True, text=True, timeout=5, check=False
         )
@@ -75,6 +86,26 @@ def prepare_ssh_identity(registered: list[str], state_dir: Path = STATE_DIR) -> 
         if os.path.exists(temporary):
             os.unlink(temporary)
     return True
+
+
+def can_sign_ssh_identity(state_dir: Path = STATE_DIR) -> bool:
+    """Confirm the selected agent can sign before creating a paid Pod."""
+    identity = state_dir / "identity.pub"
+    env = _agent_environment()
+    if env is None or not identity.is_file():
+        return False
+    try:
+        result = subprocess.run(
+            ["ssh-add", "-T", str(identity)],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=45,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
 
 
 class SSHClient:

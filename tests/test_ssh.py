@@ -4,7 +4,12 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from runpod_workspace.ssh import SSHClient, matching_agent_keys, prepare_ssh_identity
+from runpod_workspace.ssh import (
+    SSHClient,
+    can_sign_ssh_identity,
+    matching_agent_keys,
+    prepare_ssh_identity,
+)
 
 
 def test_doctor_finds_key_in_configured_ssh_agent(monkeypatch: Any, tmp_path: Path) -> None:
@@ -24,6 +29,7 @@ def test_doctor_finds_key_in_configured_ssh_agent(monkeypatch: Any, tmp_path: Pa
     assert calls[1][1] == str(Path.home() / ".ssh/agent.sock")
     assert prepare_ssh_identity(["ssh-ed25519 matching-key runpod"], tmp_path)
     assert (tmp_path / "identity.pub").read_text() == "ssh-ed25519 matching-key\n"
+    assert can_sign_ssh_identity(tmp_path)
     pod = {"id": "pod-1", "ssh": {"direct": {"host": "127.0.0.1", "port": 22, "username": "root"}}}
     args = SSHClient(pod, state_dir=tmp_path).args()
     assert "IdentitiesOnly=yes" in args
@@ -39,3 +45,15 @@ def test_doctor_rejects_unmatched_agent_key(monkeypatch: Any, tmp_path: Path) ->
     assert matching_agent_keys(["ssh-ed25519 registered runpod"]) == 0
     assert not prepare_ssh_identity(["ssh-ed25519 registered runpod"], tmp_path)
     assert not (tmp_path / "identity.pub").exists()
+    assert not can_sign_ssh_identity(tmp_path)
+
+
+def test_paid_pod_guard_rejects_locked_agent(monkeypatch: Any, tmp_path: Path) -> None:
+    (tmp_path / "identity.pub").write_text("ssh-ed25519 matching-key\n")
+    monkeypatch.setattr("runpod_workspace.ssh._agent_environment", lambda: {})
+
+    def failed_sign(args: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args, 1, stdout="", stderr="approval required")
+
+    monkeypatch.setattr(subprocess, "run", failed_sign)
+    assert not can_sign_ssh_identity(tmp_path)

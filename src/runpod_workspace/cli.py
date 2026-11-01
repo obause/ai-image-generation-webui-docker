@@ -17,6 +17,7 @@ from runpod_workspace.secrets import SecretsError, load_local_secrets, verify_po
 from runpod_workspace.ssh import (
     SSHClient,
     SSHError,
+    can_sign_ssh_identity,
     matching_agent_keys,
     prepare_ssh_identity,
 )
@@ -198,6 +199,10 @@ def up(
         with client:
             if not ctx.obj["ssh_identity_ready"]:
                 raise LifecycleError("no matching local SSH agent key; cannot safely control Pod")
+            if not can_sign_ssh_identity():
+                raise LifecycleError(
+                    "matching SSH key cannot sign; unlock the key manager before creating a Pod"
+                )
             pod = life.up(wait=not no_wait)
         typer.echo(f"Pod: {pod['id']}")
         typer.echo(f"GPU: {config.runpod.gpu.id}")
