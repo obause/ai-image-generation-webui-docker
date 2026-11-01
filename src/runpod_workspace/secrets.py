@@ -17,6 +17,7 @@ ALLOWED_KEYS = frozenset(
         "B2_POD_APPLICATION_KEY_ID",
         "B2_POD_APPLICATION_KEY",
         "CIVITAI_API_TOKEN",
+        "HF_TOKEN",
         "WORKSPACE_WEB_PASSWORD",
     }
 )

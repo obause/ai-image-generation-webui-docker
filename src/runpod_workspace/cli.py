@@ -129,6 +129,12 @@ def doctor(ctx: typer.Context) -> None:
         else "optional; not set"
     )
     typer.echo(f"CIVITAI_API_TOKEN: {civitai_status}")
+    hf_status = (
+        "set (Hugging Face downloads enabled)"
+        if os.environ.get("HF_TOKEN")
+        else "optional; not set"
+    )
+    typer.echo(f"HF_TOKEN: {hf_status}")
     migration_key = bool(
         os.environ.get("B2_APPLICATION_KEY_ID") and os.environ.get("B2_APPLICATION_KEY")
     )
@@ -309,7 +315,7 @@ def logs(
     ctx: typer.Context,
     follow: bool = typer.Option(False, "--follow", "-f"),
 ) -> None:
-    """Read bootstrap and periodic backup logs from the Pod."""
+    """Read bootstrap, background restore, and periodic backup logs from the Pod."""
     try:
         _, client, _, pod = _managed(ctx)
         with client:
@@ -325,7 +331,7 @@ def logs(
             cmd = (
                 "tail "
                 + ("-n 100 -F" if follow else "-n 100")
-                + " /workspace/.rp-bootstrap.log /workspace/.rp-sync.log"
+                + " /workspace/.rp-bootstrap.log /workspace/.rp-restore.log /workspace/.rp-sync.log"
             )
             raise typer.Exit(ssh.stream(cmd))
     except (LifecycleError, RunPodError, SSHError, StateError) as exc:

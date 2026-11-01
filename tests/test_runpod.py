@@ -49,8 +49,10 @@ def test_create_pod_without_template(config: Config) -> None:
 def test_log_stream_redacts_local_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("B2_APPLICATION_KEY", "very-private-test-value")
     monkeypatch.setenv("CIVITAI_API_TOKEN", "very-private-civitai-value")
+    monkeypatch.setenv("HF_TOKEN", "very-private-hf-value")
     payload = (
-        'data: {"line":"bad: very-private-test-value and very-private-civitai-value",'
+        'data: {"line":"bad: very-private-test-value and '
+        'very-private-civitai-value and very-private-hf-value",'
         '"source":"container"}\n\n'
     )
 
@@ -59,7 +61,7 @@ def test_log_stream_redacts_local_secrets(monkeypatch: pytest.MonkeyPatch) -> No
 
     with RunPodClient("key", httpx.MockTransport(respond)) as client:
         lines = client.log_lines("pod123")
-    assert lines == ["bad: [REDACTED] and [REDACTED]"]
+    assert lines == ["bad: [REDACTED] and [REDACTED] and [REDACTED]"]
 
 
 def test_system_logs_dedupe_repeated_pull_progress() -> None:
@@ -93,6 +95,20 @@ def test_optional_civitai_secret_is_reference(
         client.create_pod(config)
     assert bodies[0]["env"]["CIVITAI_API_TOKEN"] == "{{ RUNPOD_SECRET_rp_workspace_civitai }}"
     assert "very-private-civitai-value" not in json.dumps(bodies[0])
+
+
+def test_optional_hf_secret_is_reference(config: Config, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HF_TOKEN", "very-private-hf-value")
+    bodies: list[dict] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(201, json={"id": "pod123"})
+
+    with RunPodClient("key", httpx.MockTransport(respond)) as client:
+        client.create_pod(config)
+    assert bodies[0]["env"]["HF_TOKEN"] == "{{ RUNPOD_SECRET_rp_workspace_hf }}"
+    assert "very-private-hf-value" not in json.dumps(bodies[0])
 
 
 def test_get_delete_and_errors_redact(config: Config) -> None:

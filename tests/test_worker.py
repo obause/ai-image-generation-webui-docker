@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import sqlite3
+import threading
+import time
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -22,6 +25,7 @@ def worker(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> ModuleType:
     monkeypatch.setattr(module, "READY", tmp_path / "ready")
     monkeypatch.setattr(module, "STATUS", tmp_path / "status.json")
     monkeypatch.setattr(module, "LOCK", tmp_path / "backup.lock")
+    monkeypatch.setattr(module, "STATUS_LOCK", tmp_path / "status.lock")
     binary = tmp_path / "rclone"
     binary.write_text("#!/bin/sh\necho 'rclone v1.75.2 (test)'\n")
     binary.chmod(0o755)
@@ -97,6 +101,135 @@ def test_empty_required_restore_blocks_ready(
     monkeypatch.setattr(worker, "rclone", lambda _args, _cfg: True)
     assert worker.bootstrap() == 1
     assert not (tmp_path / "ready").exists()
+
+
+def test_background_restore_does_not_delay_ready(
+    worker: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config = worker.settings()
+    config["storage"]["restore"].append(
+        {
+            "name": "images",
+            "local": str(tmp_path / "images"),
+            "remote": "images",
+            "mode": "copy",
+            "required": False,
+            "background": True,
+        }
+    )
+    monkeypatch.setattr(worker, "settings", lambda: config)
+    calls: list[list[str]] = []
+
+    def fake_rclone(args: list[str], _cfg: dict) -> bool:
+        calls.append(args)
+        if args[0] == "copy" and args[1].endswith("/models"):
+            target = tmp_path / "models"
+            (target / "checkpoints").mkdir(parents=True, exist_ok=True)
+            (target / "checkpoints" / "model.safetensors").write_text("test")
+        return True
+
+    monkeypatch.setattr(worker, "rclone", fake_rclone)
+    assert worker.bootstrap() == 0
+    assert (tmp_path / "ready").exists()
+    assert not any(args[1].endswith("/images") for args in calls)
+    status = json.loads((tmp_path / "status.json").read_text())
+    assert status["mappings"]["restore:images"]["state"] == "pending"
+    assert worker.background_restore() == 0
+    assert calls[-1][-1] == "--ignore-existing"
+    status = json.loads((tmp_path / "status.json").read_text())
+    assert status["mappings"]["restore:images"]["state"] == "completed"
+
+
+def test_progress_logs_only_aggregate_statistics(
+    worker: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output: list[str] = []
+    monkeypatch.setattr(worker, "log", output.append)
+    worker._progress(
+        json.dumps(
+            {
+                "stats": {
+                    "bytes": 50,
+                    "totalBytes": 100,
+                    "transfers": 1,
+                    "totalTransfers": 2,
+                    "speed": 1048576,
+                    "errors": 0,
+                },
+                "message": "secret-model-name",
+            }
+        )
+    )
+    worker._progress('{"message":"B2_APPLICATION_KEY=test-secret"}')
+    assert len(output) == 1
+    assert "50.0%" in output[0]
+    assert "1.0 MiB/s" in output[0]
+    assert "secret" not in output[0]
+
+
+def test_rclone_progress_stream_redacts_raw_lines(
+    worker: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    binary = tmp_path / "rclone-progress"
+    binary.write_text(
+        "#!/bin/sh\n"
+        'echo \'{"stats":{"bytes":25,"totalBytes":100,"speed":1048576},'
+        '"message":"private-name"}\' >&2\n'
+        "echo 'secret-key-and-private-path' >&2\n"
+    )
+    binary.chmod(0o755)
+    monkeypatch.setattr(worker, "RCLONE", binary)
+    output: list[str] = []
+    monkeypatch.setattr(worker, "log", output.append)
+    assert worker.rclone(["copy", "source", "target"], {"transfers": 16, "fast_list": True})
+    assert any("25.0%" in line for line in output)
+    assert not any("private" in line or "secret" in line for line in output)
+
+
+def test_backup_waits_for_same_mapping_background_restore(
+    worker: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config = worker.settings()
+    images = {
+        "name": "images",
+        "local": str(tmp_path / "images"),
+        "remote": "images",
+        "mode": "copy",
+        "required": False,
+        "background": True,
+    }
+    config["storage"]["restore"] = [images]
+    config["storage"]["backup"] = [{**images, "interval_seconds": 300}]
+    monkeypatch.setattr(worker, "settings", lambda: config)
+    (tmp_path / "images").mkdir()
+    restoring = threading.Event()
+    release = threading.Event()
+    calls: list[str] = []
+
+    def fake_rclone(args: list[str], _cfg: dict) -> bool:
+        if args[-1] == "--ignore-existing":
+            calls.append("restore")
+            restoring.set()
+            assert release.wait(3)
+        else:
+            calls.append("backup")
+        return True
+
+    monkeypatch.setattr(worker, "rclone", fake_rclone)
+    restore_thread = threading.Thread(target=worker.background_restore)
+    backup_thread = threading.Thread(target=worker.backup, args=("images",))
+    restore_thread.start()
+    try:
+        assert restoring.wait(2)
+        backup_thread.start()
+        time.sleep(0.05)
+        assert calls == ["restore"]
+    finally:
+        release.set()
+        restore_thread.join(3)
+        if backup_thread.ident:
+            backup_thread.join(3)
+    assert calls == ["restore", "backup"]
 
 
 def test_invokeai_backup_uses_sqlite_snapshot(

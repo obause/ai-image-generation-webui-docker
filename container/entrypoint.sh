@@ -5,6 +5,7 @@ mkdir -p /workspace
 chown ubuntu:ubuntu /workspace
 rm -f /workspace/.rp-bootstrap-ready
 gosu ubuntu touch /workspace/.rp-bootstrap.log /workspace/.rp-sync.log \
+    /workspace/.rp-restore.log \
     /workspace/.rp-comfy.log /workspace/.rp-swarm.log \
     /workspace/.rp-code-server.log /workspace/.rp-filebrowser.log
 
@@ -40,13 +41,14 @@ export RP_FILEBROWSER_ENABLED="$(python3 -c 'import json,os; print(str(json.load
 
 nginx -c /opt/runpod-bootstrap/nginx.conf -g 'daemon off;' >> /workspace/.rp-nginx.log 2>&1 &
 
-# InvokeAI accepts JSON for this settings field. Build it from an optional
-# Pod secret in-process; the token never enters Docker layers, argv, or logs.
-if [[ -n "${CIVITAI_API_TOKEN:-}" ]]; then
+# InvokeAI accepts JSON for this settings field. Build it from optional Pod
+# secrets in-process; tokens never enter Docker layers, argv, or logs.
+if [[ -n "${CIVITAI_API_TOKEN:-}${HF_TOKEN:-}" ]]; then
     export INVOKEAI_REMOTE_API_TOKENS="$(python3 /opt/runpod-bootstrap/civitai_tokens.py)"
     unset CIVITAI_API_TOKEN
 fi
 
+gosu ubuntu python3 /opt/runpod-bootstrap/worker.py background-restore >> /workspace/.rp-restore.log 2>&1 &
 gosu ubuntu python3 /opt/runpod-bootstrap/worker.py loop >> /workspace/.rp-sync.log 2>&1 &
 gosu ubuntu /opt/runpod-bootstrap/start-comfy.sh >> /workspace/.rp-comfy.log 2>&1 &
 if [[ -n "${RP_CODE_SERVER_ENABLED:-}${RP_FILEBROWSER_ENABLED:-}" ]]; then

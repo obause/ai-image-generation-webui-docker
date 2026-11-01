@@ -149,6 +149,8 @@ class RunPodClient:
         }
         if os.environ.get("CIVITAI_API_TOKEN"):
             env["CIVITAI_API_TOKEN"] = f"{{{{ RUNPOD_SECRET_{prefix}_civitai }}}}"
+        if os.environ.get("HF_TOKEN"):
+            env["HF_TOKEN"] = f"{{{{ RUNPOD_SECRET_{prefix}_hf }}}}"
         if os.environ.get("WORKSPACE_WEB_PASSWORD"):
             env["WORKSPACE_WEB_PASSWORD"] = f"{{{{ RUNPOD_SECRET_{prefix}_web_password }}}}"
         gpu_request: dict[str, Any] = {"id": rp.gpu.id, "count": rp.gpu.count}
@@ -207,6 +209,7 @@ class RunPodClient:
                         "B2_POD_APPLICATION_KEY_ID",
                         "B2_POD_APPLICATION_KEY",
                         "CIVITAI_API_TOKEN",
+                        "HF_TOKEN",
                         "WORKSPACE_WEB_PASSWORD",
                     ):
                         secret = os.environ.get(key)

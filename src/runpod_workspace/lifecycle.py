@@ -113,11 +113,11 @@ class Lifecycle:
                 self.client.ensure_secret(
                     f"{prefix}_b2_id", os.environ["B2_POD_APPLICATION_KEY_ID"]
                 )
-                self.client.ensure_secret(
-                    f"{prefix}_b2_key", os.environ["B2_POD_APPLICATION_KEY"]
-                )
+                self.client.ensure_secret(f"{prefix}_b2_key", os.environ["B2_POD_APPLICATION_KEY"])
                 if os.environ.get("CIVITAI_API_TOKEN"):
                     self.client.ensure_secret(f"{prefix}_civitai", os.environ["CIVITAI_API_TOKEN"])
+                if os.environ.get("HF_TOKEN"):
+                    self.client.ensure_secret(f"{prefix}_hf", os.environ["HF_TOKEN"])
                 if os.environ.get("WORKSPACE_WEB_PASSWORD"):
                     self.client.ensure_secret(
                         f"{prefix}_web_password", os.environ["WORKSPACE_WEB_PASSWORD"]

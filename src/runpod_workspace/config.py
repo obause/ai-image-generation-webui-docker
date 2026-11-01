@@ -112,6 +112,13 @@ class RestoreMapping(StrictModel):
     local: str
     mode: Literal["copy", "sync"] = "copy"
     required: bool = True
+    background: bool = False
+
+    @model_validator(mode="after")
+    def background_is_optional_copy(self) -> RestoreMapping:
+        if self.background and (self.required or self.mode != "copy"):
+            raise ValueError("background restore requires required: false and mode: copy")
+        return self
 
 
 class BackupMapping(StrictModel):

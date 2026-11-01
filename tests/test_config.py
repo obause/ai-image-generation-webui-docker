@@ -58,3 +58,16 @@ def test_prefix_must_be_relative(config: Config) -> None:
     raw["storage"]["prefix"] = "../old-backup"
     with pytest.raises(ValidationError):
         Config.model_validate(raw)
+
+
+def test_background_restore_must_be_optional_copy(config: Config) -> None:
+    raw = config.model_dump()
+    raw["storage"]["restore"][0]["background"] = True
+    with pytest.raises(ValidationError):
+        Config.model_validate(raw)
+    raw["storage"]["restore"][0]["required"] = False
+    raw["storage"]["restore"][0]["mode"] = "sync"
+    with pytest.raises(ValidationError):
+        Config.model_validate(raw)
+    raw["storage"]["restore"][0]["mode"] = "copy"
+    assert Config.model_validate(raw).storage.restore[0].background

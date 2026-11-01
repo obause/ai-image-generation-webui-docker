@@ -20,6 +20,7 @@ ROOT = Path("/workspace")
 READY = ROOT / ".rp-bootstrap-ready"
 STATUS = ROOT / ".rp-sync-status.json"
 LOCK = ROOT / ".rp-backup.lock"
+STATUS_LOCK = ROOT / ".rp-status.lock"
 RCLONE = Path("/opt/runpod-bootstrap/bin/rclone")
 
 
@@ -61,18 +62,51 @@ def rclone_env() -> dict[str, str]:
     return env
 
 
+def _progress(line: str) -> None:
+    """Log aggregate transfer counters only; rclone's raw lines can contain secrets/paths."""
+    try:
+        event = json.loads(line)
+        stats = event["stats"]
+        transferred = int(stats.get("bytes", 0))
+        total = int(stats.get("totalBytes", 0))
+        files = int(stats.get("transfers", 0))
+        total_files = int(stats.get("totalTransfers", 0))
+        speed = float(stats.get("speed", 0))
+        errors = int(stats.get("errors", 0))
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return
+    percent = f" ({transferred / total * 100:.1f}%)" if total else ""
+    log(
+        f"Transfer progress: {transferred:,}/{total:,} bytes{percent}, "
+        f"files {files}/{total_files}, {speed / 1048576:.1f} MiB/s, errors {errors}"
+    )
+
+
 def rclone(args: list[str], cfg: dict) -> bool:
     options = ["--config", "/dev/null", "--transfers", str(cfg["transfers"])]
     if cfg["fast_list"]:
         options.append("--fast-list")
-    result = subprocess.run(
-        [str(RCLONE), *args, *options],
-        env=rclone_env(),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
-    return result.returncode == 0
+    transfer = args[0] in ("copy", "sync", "copyto")
+    if transfer:
+        options.extend(["--use-json-log", "--stats", "15s", "--stats-log-level", "NOTICE"])
+    try:
+        with subprocess.Popen(
+            [str(RCLONE), *args, *options],
+            env=rclone_env(),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE if transfer else subprocess.DEVNULL,
+            text=True,
+        ) as process:
+            if transfer and process.stderr:
+                for line in process.stderr:
+                    _progress(line)
+            code = process.wait()
+    except OSError:
+        log("rclone could not start")
+        return False
+    if code:
+        log(f"rclone exited with status {code}")
+    return code == 0
 
 
 def remote(cfg: dict, name: str) -> str:
@@ -80,30 +114,75 @@ def remote(cfg: dict, name: str) -> str:
     return "rp:" + "/".join(part for part in parts if part)
 
 
-def write_status(name: str, success: bool) -> None:
-    try:
-        content = json.loads(STATUS.read_text())
-    except (OSError, ValueError):
-        content = {"mappings": {}}
-    content["mappings"][name] = {"success": success, "time": datetime.now(UTC).isoformat()}
-    fd, path = tempfile.mkstemp(prefix=".rp-status-", dir=ROOT)
-    try:
-        with os.fdopen(fd, "w") as handle:
-            json.dump(content, handle)
-        os.replace(path, STATUS)
-    finally:
-        if os.path.exists(path):
-            os.unlink(path)
+def write_status(name: str, success: bool | None, state: str | None = None) -> None:
+    with file_lock(STATUS_LOCK):
+        try:
+            content = json.loads(STATUS.read_text())
+        except (OSError, ValueError):
+            content = {"mappings": {}}
+        entry = {"success": success, "time": datetime.now(UTC).isoformat()}
+        if state:
+            entry["state"] = state
+        content["mappings"][name] = entry
+        fd, path = tempfile.mkstemp(prefix=".rp-status-", dir=ROOT)
+        try:
+            with os.fdopen(fd, "w") as handle:
+                json.dump(content, handle)
+            os.replace(path, STATUS)
+        finally:
+            if os.path.exists(path):
+                os.unlink(path)
 
 
 @contextmanager
-def backup_lock():
-    with LOCK.open("a+b") as handle:
+def file_lock(path: Path):
+    with path.open("a+b") as handle:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         try:
             yield
         finally:
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+@contextmanager
+def backup_lock():
+    with file_lock(LOCK):
+        yield
+
+
+@contextmanager
+def mapping_lock(name: str):
+    with file_lock(ROOT / f".rp-mapping-{name}.lock"):
+        yield
+
+
+def restore_mapping(cfg: dict, mapping: dict, *, background: bool = False) -> bool:
+    name = mapping["name"]
+    Path(mapping["local"]).mkdir(parents=True, exist_ok=True)
+    log(f"Restore {name} started ({mapping['mode']})")
+    args = [mapping["mode"], remote(cfg, mapping["remote"]), mapping["local"]]
+    if background:
+        # Services may create local files while history downloads; never overwrite them.
+        args.append("--ignore-existing")
+    with mapping_lock(name):
+        success = rclone(args, cfg)
+    if success and name == "invokeai":
+        db_dir = Path(mapping["local"]) / "databases"
+        snapshot = db_dir / "invokeai.snapshot.db"
+        if snapshot.is_file():
+            shutil.copyfile(snapshot, db_dir / "invokeai.db")
+            for suffix in ("-wal", "-shm"):
+                (db_dir / f"invokeai.db{suffix}").unlink(missing_ok=True)
+            log("InvokeAI database restored from consistent snapshot")
+    if (
+        success
+        and mapping["required"]
+        and not any(path.is_file() for path in Path(mapping["local"]).rglob("*"))
+    ):
+        log(f"Restore {name} found no files in required mapping")
+        success = False
+    log(f"Restore {name} {'completed' if success else 'FAILED'}")
+    return success
 
 
 def bootstrap() -> int:
@@ -131,25 +210,11 @@ def bootstrap() -> int:
         return 1
     failed_required = False
     for mapping in cfg["restore"]:
-        Path(mapping["local"]).mkdir(parents=True, exist_ok=True)
-        log(f"Restore {mapping['name']} started ({mapping['mode']})")
-        success = rclone([mapping["mode"], remote(cfg, mapping["remote"]), mapping["local"]], cfg)
-        if success and mapping["name"] == "invokeai":
-            db_dir = Path(mapping["local"]) / "databases"
-            snapshot = db_dir / "invokeai.snapshot.db"
-            if snapshot.is_file():
-                shutil.copyfile(snapshot, db_dir / "invokeai.db")
-                for suffix in ("-wal", "-shm"):
-                    (db_dir / f"invokeai.db{suffix}").unlink(missing_ok=True)
-                log("InvokeAI database restored from consistent snapshot")
-        if (
-            success
-            and mapping["required"]
-            and not any(path.is_file() for path in Path(mapping["local"]).rglob("*"))
-        ):
-            log(f"Restore {mapping['name']} found no files in required mapping")
-            success = False
-        log(f"Restore {mapping['name']} {'completed' if success else 'FAILED'}")
+        if mapping.get("background", False):
+            write_status("restore:" + mapping["name"], None, "pending")
+            log(f"Restore {mapping['name']} queued for background transfer")
+            continue
+        success = restore_mapping(cfg, mapping)
         failed_required |= mapping["required"] and not success
     if failed_required:
         log("Required restore failed; application startup blocked")
@@ -159,6 +224,20 @@ def bootstrap() -> int:
     write_status("bootstrap", True)
     log("Bootstrap ready")
     return 0
+
+
+def background_restore() -> int:
+    cfg = settings()["storage"]
+    failed = False
+    for mapping in cfg["restore"]:
+        if not mapping.get("background", False):
+            continue
+        name = mapping["name"]
+        write_status("restore:" + name, None, "running")
+        success = restore_mapping(cfg, mapping, background=True)
+        write_status("restore:" + name, success, "completed" if success else "failed")
+        failed |= not success
+    return 1 if failed else 0
 
 
 def backup(name: str | None = None) -> int:
@@ -182,52 +261,52 @@ def backup(name: str | None = None) -> int:
                 failed = True
                 continue
             log(f"Backup {mapping['name']} started ({mapping['mode']})")
-            if mapping["name"] == "invokeai":
-                # Copying a live SQLite DB plus WAL is not a consistent backup.
-                success = rclone(
-                    [
-                        mapping["mode"],
-                        str(source),
-                        remote(cfg, mapping["remote"]),
-                        "--exclude",
-                        "/databases/invokeai.db*",
-                        "--exclude",
-                        "/databases/invokeai.snapshot.db",
-                    ],
-                    cfg,
-                )
-                database = source / "databases/invokeai.db"
-                if success and database.is_file():
-                    try:
-                        with tempfile.TemporaryDirectory(dir=ROOT) as temporary:
-                            snapshot = Path(temporary) / "invokeai.snapshot.db"
-                            with closing(
-                                sqlite3.connect(
-                                    f"{database.as_uri()}?mode=ro", uri=True, timeout=30
-                                )
-                            ) as origin:
-                                with closing(sqlite3.connect(snapshot)) as target:
-                                    origin.backup(target)
-                            success = rclone(
-                                [
-                                    "copyto",
-                                    str(snapshot),
-                                    remote(
-                                        cfg, mapping["remote"] + "/databases/invokeai.snapshot.db"
-                                    ),
-                                ],
-                                cfg,
-                            )
-                    except (OSError, sqlite3.Error):
-                        success = False
-            else:
-                success = rclone(
-                    [mapping["mode"], str(source), remote(cfg, mapping["remote"])], cfg
-                )
+            with mapping_lock(mapping["name"]):
+                success = backup_mapping(cfg, mapping, source)
             write_status(mapping["name"], success)
             log(f"Backup {mapping['name']} {'completed' if success else 'FAILED'}")
             failed |= not success
     return 1 if failed else 0
+
+
+def backup_mapping(cfg: dict, mapping: dict, source: Path) -> bool:
+    if mapping["name"] == "invokeai":
+        # Copying a live SQLite DB plus WAL is not a consistent backup.
+        success = rclone(
+            [
+                mapping["mode"],
+                str(source),
+                remote(cfg, mapping["remote"]),
+                "--exclude",
+                "/databases/invokeai.db*",
+                "--exclude",
+                "/databases/invokeai.snapshot.db",
+            ],
+            cfg,
+        )
+        database = source / "databases/invokeai.db"
+        if success and database.is_file():
+            try:
+                with tempfile.TemporaryDirectory(dir=ROOT) as temporary:
+                    snapshot = Path(temporary) / "invokeai.snapshot.db"
+                    with closing(
+                        sqlite3.connect(f"{database.as_uri()}?mode=ro", uri=True, timeout=30)
+                    ) as origin:
+                        with closing(sqlite3.connect(snapshot)) as target:
+                            origin.backup(target)
+                    success = rclone(
+                        [
+                            "copyto",
+                            str(snapshot),
+                            remote(cfg, mapping["remote"] + "/databases/invokeai.snapshot.db"),
+                        ],
+                        cfg,
+                    )
+            except (OSError, sqlite3.Error):
+                success = False
+    else:
+        success = rclone([mapping["mode"], str(source), remote(cfg, mapping["remote"])], cfg)
+    return success
 
 
 def request_self_delete() -> bool:
@@ -290,6 +369,8 @@ if __name__ == "__main__":
         sys.exit(bootstrap())
     if action == "backup":
         sys.exit(backup(sys.argv[2] if len(sys.argv) > 2 else None))
+    if action == "background-restore":
+        sys.exit(background_restore())
     if action == "loop":
         sys.exit(loop())
     log("Unknown action")
