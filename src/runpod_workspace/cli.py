@@ -80,7 +80,7 @@ def _warn_sync(config: Config) -> None:
 
 
 def _show_login_hints(config: Config) -> None:
-    typer.echo("Generation UIs: username workspace; password WORKSPACE_WEB_PASSWORD")
+    typer.echo("Generation UIs: direct access (no extra login)")
     if config.application.code_server:
         typer.echo("code-server: password WORKSPACE_WEB_PASSWORD")
     if config.application.filebrowser:

@@ -47,13 +47,14 @@ docker exec -i "$container" python3 - <<'PY'
 import urllib.error
 import urllib.request
 import time
+from pathlib import Path
 
+assert "auth_basic" not in Path("/opt/runpod-bootstrap/nginx.conf").read_text()
 try:
-    urllib.request.urlopen("http://127.0.0.1:8188/", timeout=5)
+    response = urllib.request.urlopen("http://127.0.0.1:8188/", timeout=5)
+    assert response.status == 200, response.status
 except urllib.error.HTTPError as error:
-    assert error.code == 401, error.code
-else:
-    raise AssertionError("generation port is not password protected")
+    assert error.code == 502, error.code  # ComfyUI may still be starting without a GPU.
 
 for _ in range(30):
     try:
@@ -67,4 +68,4 @@ else:
 PY
 docker exec -e RP_CONFIG_JSON= -e B2_APPLICATION_KEY_ID= -e B2_APPLICATION_KEY= \
     "$container" /opt/venv/bin/python /opt/runpod-bootstrap/worker.py backup
-echo "Container bootstrap, web gate, FileBrowser, and remote backup smoke test passed"
+echo "Container bootstrap, open generation proxy, FileBrowser, and remote backup smoke test passed"

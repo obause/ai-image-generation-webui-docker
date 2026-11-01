@@ -38,12 +38,6 @@ fi
 export RP_CODE_SERVER_ENABLED="$(python3 -c 'import json,os; print(str(json.loads(os.environ["RP_CONFIG_JSON"])["application"].get("code_server", False)).lower())')"
 export RP_FILEBROWSER_ENABLED="$(python3 -c 'import json,os; print(str(json.loads(os.environ["RP_CONFIG_JSON"])["application"].get("filebrowser", False)).lower())')"
 
-# The public proxy ports for generation apps all require HTTP Basic auth.
-# The hash is ephemeral and never enters Docker layers or command arguments.
-umask 077
-printf 'workspace:%s\n' "$(printf '%s\n' "$WORKSPACE_WEB_PASSWORD" | openssl passwd -6 -stdin)" > /run/rp-web.htpasswd
-chgrp www-data /run/rp-web.htpasswd
-chmod 640 /run/rp-web.htpasswd
 nginx -c /opt/runpod-bootstrap/nginx.conf -g 'daemon off;' >> /workspace/.rp-nginx.log 2>&1 &
 
 # InvokeAI accepts JSON for this settings field. Build it from an optional
