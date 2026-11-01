@@ -125,3 +125,14 @@ def test_add_ssh_key_preserves_registered_keys() -> None:
         client.add_ssh_key(new)
         client.add_ssh_key(existing)
     assert writes == [{"keys": [existing, new]}]
+
+
+def test_add_ssh_key_rejects_lost_existing_key() -> None:
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(200, json={"keys": ["ssh-ed25519 existing first"]})
+        return httpx.Response(200, json={"keys": ["ssh-ed25519 other second"]})
+
+    with RunPodClient("key", httpx.MockTransport(respond)) as client:
+        with pytest.raises(RunPodError, match="did not confirm"):
+            client.add_ssh_key("ssh-ed25519 new-key runpod-workspace")

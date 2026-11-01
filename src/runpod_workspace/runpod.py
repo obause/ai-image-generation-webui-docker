@@ -114,7 +114,12 @@ class RunPodClient:
             return
         updated = self._request("PUT", "/account/ssh-keys", json={"keys": [*keys, public_key]})
         returned = updated.get("keys") if isinstance(updated, dict) else None
-        if not isinstance(returned, list) or len(returned) != len(keys) + 1:
+        expected_blobs = {key.split()[1] for key in [*keys, public_key]}
+        if (
+            not isinstance(returned, list)
+            or not all(isinstance(key, str) and len(key.split()) >= 2 for key in returned)
+            or {key.split()[1] for key in returned} != expected_blobs
+        ):
             raise RunPodError("RunPod did not confirm the updated SSH key set")
 
     def list_secrets(self) -> list[dict[str, Any]]:
