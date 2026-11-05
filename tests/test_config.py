@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import json
+
 import pytest
 from pydantic import ValidationError
 
@@ -25,6 +28,25 @@ def test_ordered_gpu_alternatives(config: Config) -> None:
         "NVIDIA GeForce RTX 5090",
         "NVIDIA RTX 6000 Ada Generation",
     ]
+
+
+def test_premium_gpu_ids_must_be_distinct(config: Config) -> None:
+    raw = config.model_dump()
+    raw["runpod"]["gpu"]["premium"] = ["NVIDIA H100 80GB HBM3"]
+    assert Config.model_validate(raw).runpod.gpu.all_ids() == [
+        "NVIDIA GeForce RTX 4090",
+        "NVIDIA H100 80GB HBM3",
+    ]
+    raw["runpod"]["gpu"]["premium"].append("NVIDIA GeForce RTX 4090")
+    with pytest.raises(ValidationError):
+        Config.model_validate(raw)
+
+
+def test_empty_premium_preserves_previous_config_fingerprint(config: Config) -> None:
+    old_shape = config.model_dump()
+    old_shape["runpod"]["gpu"].pop("premium")
+    expected = hashlib.sha256(json.dumps(old_shape, sort_keys=True).encode()).hexdigest()[:16]
+    assert config.fingerprint() == expected
 
 
 @pytest.mark.parametrize(

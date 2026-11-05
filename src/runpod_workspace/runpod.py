@@ -154,7 +154,7 @@ class RunPodClient:
         if os.environ.get("WORKSPACE_WEB_PASSWORD"):
             env["WORKSPACE_WEB_PASSWORD"] = f"{{{{ RUNPOD_SECRET_{prefix}_web_password }}}}"
         chosen_gpu = gpu_id or rp.gpu.id
-        if chosen_gpu not in rp.gpu.ordered_ids():
+        if chosen_gpu not in rp.gpu.all_ids():
             raise RunPodError("selected GPU is not configured")
         gpu_request: dict[str, Any] = {"id": chosen_gpu, "count": rp.gpu.count}
         if rp.gpu.min_cuda_version:

@@ -10,7 +10,13 @@ from typing import Any
 
 import typer
 
-from runpod_workspace.config import DEFAULT_CONFIG, Config, ConfigError, load_config
+from runpod_workspace.config import (
+    DEFAULT_CONFIG,
+    Config,
+    ConfigError,
+    duration_seconds,
+    load_config,
+)
 from runpod_workspace.lifecycle import Lifecycle, LifecycleError, proxy_urls
 from runpod_workspace.runpod import RunPodClient, RunPodError
 from runpod_workspace.secrets import SecretsError, load_local_secrets, verify_pod_b2_key
@@ -157,17 +163,23 @@ def doctor(ctx: typer.Context) -> None:
                 else:
                     typer.echo("Template: omitted; using wrapper image directly")
                 any_available = False
-                for gpu_id in config.runpod.gpu.ordered_ids():
-                    gpu = client.get_gpu(
-                        gpu_id,
-                        config.runpod.gpu.count,
-                        config.runpod.cloud,
-                        config.runpod.gpu.min_cuda_version,
-                    )
+                for gpu_id in config.runpod.gpu.all_ids():
+                    try:
+                        gpu = client.get_gpu(
+                            gpu_id,
+                            config.runpod.gpu.count,
+                            config.runpod.cloud,
+                            config.runpod.gpu.min_cuda_version,
+                        )
+                    except RunPodError as exc:
+                        if "HTTP 404" not in str(exc):
+                            raise
+                        gpu = {"availability": "INVALID"}
                     availability = str(gpu.get("availability", "unknown"))
-                    price = gpu.get("price", {}).get(config.runpod.cloud.lower())
+                    price = (gpu.get("price") or {}).get(config.runpod.cloud.lower())
                     price_text = f"; ${price}/GPU-hour" if isinstance(price, (int, float)) else ""
-                    typer.echo(f"GPU {gpu_id}: {availability}{price_text}")
+                    tier = "premium" if gpu_id in config.runpod.gpu.premium else "standard"
+                    typer.echo(f"GPU {gpu_id} ({tier}): {availability}{price_text}")
                     any_available |= availability in ("LOW", "MEDIUM", "HIGH")
                 ok &= any_available
                 ssh_keys = client.get_ssh_keys()
@@ -213,20 +225,42 @@ def up(
     ctx: typer.Context,
     no_wait: bool = typer.Option(False, "--no-wait", help="Return after Pod creation"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print plan without API mutation"),
+    premium: bool = typer.Option(False, "--premium", help="Choose only configured premium GPUs"),
+    only_gpu: str | None = typer.Option(None, "--only-gpu", help="Use one configured exact GPU ID"),
+    retry_every: int | None = typer.Option(
+        None, "--retry-every", min=5, help="Poll this exact GPU every N seconds"
+    ),
+    retry_for: str = typer.Option("1h", "--retry-for", help="Maximum GPU polling time, e.g. 2h"),
 ) -> None:
     """Create or reconcile the workspace, restore B2, and wait for readiness."""
     config = _config(ctx)
     _warn_sync(config)
+    if premium and only_gpu:
+        _fail(LifecycleError("--premium and --only-gpu cannot be combined"))
+    if only_gpu and only_gpu not in config.runpod.gpu.all_ids():
+        _fail(LifecycleError("--only-gpu must match a configured standard or premium GPU ID"))
+    if retry_every is not None and not only_gpu:
+        _fail(LifecycleError("--retry-every requires --only-gpu"))
+    try:
+        retry_seconds = duration_seconds(retry_for)
+    except ValueError:
+        _fail(LifecycleError("--retry-for must be a positive duration such as 30m or 2h"))
+        raise AssertionError("unreachable") from None
+    if retry_every is not None and retry_seconds < retry_every:
+        _fail(LifecycleError("--retry-for must be at least --retry-every"))
     if ctx.obj["verbose"]:
         typer.echo(f"Config fingerprint: {config.fingerprint()}")
     if dry_run:
         typer.echo(f"Pod name: {config.runpod.pod_name}")
         typer.echo(f"Template: {config.runpod.template_id or 'none (direct image)'}")
         typer.echo(f"Wrapper image: {config.runpod.wrapper_image}")
+        typer.echo(f"Standard GPUs: {', '.join(config.runpod.gpu.ordered_ids())}")
+        typer.echo(f"Premium GPUs: {', '.join(config.runpod.gpu.premium) or 'none'}")
         typer.echo(
-            f"GPU candidates (in order): {', '.join(config.runpod.gpu.ordered_ids())} "
-            f"({config.runpod.gpu.count} GPU per Pod)"
+            f"Selection: {only_gpu or ('premium only' if premium else 'standard then prompt')}"
         )
+        if retry_every is not None:
+            typer.echo(f"GPU retry: every {retry_every}s for up to {retry_for}")
         typer.echo(f"Cloud: {config.runpod.cloud}")
         typer.echo(f"Ephemeral disk: {config.runpod.disk_gb} GB")
         typer.echo(f"Restore: {', '.join(m.name for m in config.storage.restore)}")
@@ -242,7 +276,30 @@ def up(
                 raise LifecycleError(
                     "matching SSH key cannot sign; run `rp setup-ssh` or unlock the key manager"
                 )
-            pod = life.up(wait=not no_wait)
+
+            def confirm_premium(gpu: dict[str, Any]) -> bool:
+                if not sys.stdin.isatty():
+                    raise LifecycleError(
+                        "Standard GPUs unavailable; pass --premium to explicitly allow "
+                        "the configured premium tier in non-interactive mode"
+                    )
+                price = (gpu.get("price") or {}).get(config.runpod.cloud.lower())
+                cost = f"${price}/GPU-hour" if isinstance(price, (int, float)) else "price unknown"
+                return typer.confirm(
+                    f"Standard GPUs unavailable. Create a Pod with {gpu.get('id')} "
+                    f"({gpu.get('memory', 'unknown')} GB VRAM, {cost})?",
+                    default=False,
+                )
+
+            pod = life.up(
+                wait=not no_wait,
+                progress=typer.echo,
+                only_gpu=only_gpu,
+                premium=premium,
+                confirm_premium=confirm_premium,
+                retry_every=retry_every,
+                retry_for=retry_seconds,
+            )
         typer.echo(f"Pod: {pod['id']}")
         saved = life.store.load()
         gpu_id = (pod.get("gpu") or {}).get("id") or (saved.gpu_id if saved else "unknown")

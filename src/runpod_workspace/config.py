@@ -35,6 +35,7 @@ class StrictModel(BaseModel):
 class GPU(StrictModel):
     id: str = Field(min_length=1)
     alternatives: list[str] = Field(default_factory=list)
+    premium: list[str] = Field(default_factory=list)
     count: int = Field(default=1, ge=1)
     min_cuda_version: str | None = None
 
@@ -45,7 +46,7 @@ class GPU(StrictModel):
             raise ValueError("replace the GPU ID placeholder")
         return value
 
-    @field_validator("alternatives")
+    @field_validator("alternatives", "premium")
     @classmethod
     def valid_alternatives(cls, values: list[str]) -> list[str]:
         if any(
@@ -58,12 +59,16 @@ class GPU(StrictModel):
 
     @model_validator(mode="after")
     def no_duplicate_preferred(self) -> GPU:
-        if self.id in self.alternatives:
-            raise ValueError("preferred GPU cannot also be an alternative")
+        all_ids = [self.id, *self.alternatives, *self.premium]
+        if len(all_ids) != len(set(all_ids)):
+            raise ValueError("GPU IDs must be unique across standard and premium tiers")
         return self
 
     def ordered_ids(self) -> list[str]:
         return [self.id, *self.alternatives]
+
+    def all_ids(self) -> list[str]:
+        return [*self.ordered_ids(), *self.premium]
 
     @field_validator("min_cuda_version")
     @classmethod
@@ -213,9 +218,11 @@ class Config(StrictModel):
         return self
 
     def fingerprint(self) -> str:
-        return hashlib.sha256(json.dumps(self.model_dump(), sort_keys=True).encode()).hexdigest()[
-            :16
-        ]
+        content = self.model_dump()
+        # Preserve fingerprints written before the optional premium tier existed.
+        if not self.runpod.gpu.premium:
+            content["runpod"]["gpu"].pop("premium")
+        return hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()[:16]
 
     def uses_destructive_sync(self) -> bool:
         return any(mapping.mode == "sync" for mapping in self.storage.restore) or any(
