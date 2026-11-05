@@ -54,7 +54,6 @@ if docker exec "$container" test -f /workspace/images/smoke-history.txt 2>/dev/n
     echo "Background image restore finished before readiness check" >&2
     exit 1
 fi
-docker exec "$container" touch /workspace/.rp-smoke-release-images
 docker exec -e CIVITAI_API_TOKEN=fake-smoke-token "$container" \
     python3 /opt/runpod-bootstrap/civitai_tokens.py | python3 -c '
 import json, re, sys
@@ -92,6 +91,11 @@ for _ in range(30):
 else:
     raise AssertionError("FileBrowser did not start")
 PY
+if docker exec "$container" test -f /workspace/images/smoke-history.txt 2>/dev/null; then
+    echo "Background image restore completed before services were available" >&2
+    exit 1
+fi
+docker exec "$container" touch /workspace/.rp-smoke-release-images
 docker exec -e RP_CONFIG_JSON= -e B2_APPLICATION_KEY_ID= -e B2_APPLICATION_KEY= \
     "$container" /opt/venv/bin/python /opt/runpod-bootstrap/worker.py backup
 docker exec "$container" test -f /workspace/images/smoke-history.txt

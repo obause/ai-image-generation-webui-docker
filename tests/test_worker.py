@@ -140,6 +140,63 @@ def test_background_restore_does_not_delay_ready(
     assert status["mappings"]["restore:images"]["state"] == "completed"
 
 
+def test_invokeai_gallery_restores_after_database_and_ready(
+    worker: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config = worker.settings()
+    invoke_root = tmp_path / "invokeai"
+    config["storage"]["restore"].extend(
+        [
+            {
+                "name": "invokeai",
+                "local": str(invoke_root),
+                "remote": "invokeai",
+                "mode": "copy",
+                "required": False,
+                "exclude": ["/outputs/**"],
+            },
+            {
+                "name": "invokeai-outputs",
+                "local": str(invoke_root / "outputs"),
+                "remote": "invokeai/outputs",
+                "mode": "copy",
+                "required": False,
+                "background": True,
+            },
+        ]
+    )
+    monkeypatch.setattr(worker, "settings", lambda: config)
+    calls: list[list[str]] = []
+
+    def fake_rclone(args: list[str], _cfg: dict) -> bool:
+        calls.append(args)
+        if args[0] != "copy":
+            return True
+        if args[1].endswith("/models"):
+            model = tmp_path / "models/checkpoints/model.safetensors"
+            model.parent.mkdir(parents=True)
+            model.write_text("model")
+        elif args[1].endswith("/invokeai"):
+            assert args[-2:] == ["--exclude", "/outputs/**"]
+            database = invoke_root / "databases/invokeai.snapshot.db"
+            database.parent.mkdir(parents=True)
+            with sqlite3.connect(database) as connection:
+                connection.execute("create table models (name text)")
+        elif args[1].endswith("/invokeai/outputs"):
+            assert (tmp_path / "ready").exists()
+            assert (invoke_root / "databases/invokeai.db").is_file()
+            assert args[-1] == "--ignore-existing"
+        return True
+
+    monkeypatch.setattr(worker, "rclone", fake_rclone)
+    assert worker.bootstrap() == 0
+    assert (tmp_path / "ready").is_file()
+    assert (invoke_root / "databases/invokeai.db").is_file()
+    assert not any(args[1].endswith("/invokeai/outputs") for args in calls)
+    assert worker.background_restore() == 0
+    assert calls[-1][1].endswith("/invokeai/outputs")
+
+
 def test_progress_logs_only_aggregate_statistics(
     worker: ModuleType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -250,6 +307,7 @@ def test_invokeai_backup_uses_sqlite_snapshot(
             "remote": "invokeai",
             "mode": "copy",
             "interval_seconds": 300,
+            "exclude": ["/outputs/**"],
         }
     ]
     monkeypatch.setattr(worker, "settings", lambda: config)
@@ -265,6 +323,7 @@ def test_invokeai_backup_uses_sqlite_snapshot(
     monkeypatch.setattr(worker, "rclone", fake_rclone)
     assert worker.backup("invokeai") == 0
     assert calls[0][0] == "copy"
+    assert "/outputs/**" in calls[0]
     assert "/databases/invokeai.db*" in calls[0]
     assert calls[1][0] == "copyto"
 

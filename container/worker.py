@@ -156,11 +156,20 @@ def mapping_lock(name: str):
         yield
 
 
+def exclude_args(mapping: dict) -> list[str]:
+    return [arg for pattern in mapping.get("exclude", []) for arg in ("--exclude", pattern)]
+
+
 def restore_mapping(cfg: dict, mapping: dict, *, background: bool = False) -> bool:
     name = mapping["name"]
     Path(mapping["local"]).mkdir(parents=True, exist_ok=True)
     log(f"Restore {name} started ({mapping['mode']})")
-    args = [mapping["mode"], remote(cfg, mapping["remote"]), mapping["local"]]
+    args = [
+        mapping["mode"],
+        remote(cfg, mapping["remote"]),
+        mapping["local"],
+        *exclude_args(mapping),
+    ]
     if background:
         # Services may create local files while history downloads; never overwrite them.
         args.append("--ignore-existing")
@@ -277,6 +286,7 @@ def backup_mapping(cfg: dict, mapping: dict, source: Path) -> bool:
                 mapping["mode"],
                 str(source),
                 remote(cfg, mapping["remote"]),
+                *exclude_args(mapping),
                 "--exclude",
                 "/databases/invokeai.db*",
                 "--exclude",
@@ -305,7 +315,10 @@ def backup_mapping(cfg: dict, mapping: dict, source: Path) -> bool:
             except (OSError, sqlite3.Error):
                 success = False
     else:
-        success = rclone([mapping["mode"], str(source), remote(cfg, mapping["remote"])], cfg)
+        success = rclone(
+            [mapping["mode"], str(source), remote(cfg, mapping["remote"]), *exclude_args(mapping)],
+            cfg,
+        )
     return success
 
 

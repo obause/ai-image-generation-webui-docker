@@ -45,8 +45,39 @@ def test_premium_gpu_ids_must_be_distinct(config: Config) -> None:
 def test_empty_premium_preserves_previous_config_fingerprint(config: Config) -> None:
     old_shape = config.model_dump()
     old_shape["runpod"]["gpu"].pop("premium")
+    for kind in ("restore", "backup"):
+        for mapping in old_shape["storage"][kind]:
+            mapping.pop("exclude")
     expected = hashlib.sha256(json.dumps(old_shape, sort_keys=True).encode()).hexdigest()[:16]
     assert config.fingerprint() == expected
+
+
+@pytest.mark.parametrize("kind", ["restore", "backup"])
+@pytest.mark.parametrize("pattern", ["outputs/**", "/", "/../other", "/bad\npattern"])
+def test_exclude_pattern_must_be_anchored_and_safe(
+    config: Config, kind: str, pattern: str
+) -> None:
+    raw = config.model_dump()
+    raw["storage"][kind][0]["exclude"] = [pattern]
+    with pytest.raises(ValidationError):
+        Config.model_validate(raw)
+
+
+def test_invokeai_gallery_split_config_is_valid() -> None:
+    from pathlib import Path
+
+    import yaml
+
+    raw = yaml.safe_load(Path("config/config.example.yaml").read_text())
+    raw["storage"]["bucket"] = "example-bucket"
+    config = Config.model_validate(raw)
+    restore = {mapping.name: mapping for mapping in config.storage.restore}
+    backup = {mapping.name: mapping for mapping in config.storage.backup}
+    assert restore["invokeai"].exclude == ["/outputs/**"]
+    assert restore["invokeai-outputs"].background
+    assert backup["invokeai"].exclude == ["/outputs/**"]
+    assert backup["invokeai-outputs"].remote == "invokeai/outputs"
+    assert all(restore[name].background for name in ("output", "images", "projects", "uploads"))
 
 
 @pytest.mark.parametrize(

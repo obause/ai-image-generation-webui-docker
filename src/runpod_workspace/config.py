@@ -139,6 +139,12 @@ class RestoreMapping(StrictModel):
     mode: Literal["copy", "sync"] = "copy"
     required: bool = True
     background: bool = False
+    exclude: list[str] = Field(default_factory=list)
+
+    @field_validator("exclude")
+    @classmethod
+    def valid_excludes(cls, values: list[str]) -> list[str]:
+        return _check_excludes(values)
 
     @model_validator(mode="after")
     def background_is_optional_copy(self) -> RestoreMapping:
@@ -153,6 +159,24 @@ class BackupMapping(StrictModel):
     remote: str
     mode: Literal["copy", "sync"] = "copy"
     interval_seconds: int = Field(default=300, ge=60)
+    exclude: list[str] = Field(default_factory=list)
+
+    @field_validator("exclude")
+    @classmethod
+    def valid_excludes(cls, values: list[str]) -> list[str]:
+        return _check_excludes(values)
+
+
+def _check_excludes(values: list[str]) -> list[str]:
+    if any(
+        not value.startswith("/")
+        or value == "/"
+        or ".." in Path(value).parts
+        or any(char in value for char in "\r\n\x00")
+        for value in values
+    ):
+        raise ValueError("exclude patterns must be anchored below the mapping root")
+    return values
 
 
 def _check_path(value: str) -> str:
@@ -222,6 +246,11 @@ class Config(StrictModel):
         # Preserve fingerprints written before the optional premium tier existed.
         if not self.runpod.gpu.premium:
             content["runpod"]["gpu"].pop("premium")
+        # Preserve state created before mapping exclusions were configurable.
+        for kind in ("restore", "backup"):
+            for mapping in content["storage"][kind]:
+                if not mapping["exclude"]:
+                    mapping.pop("exclude")
         return hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()[:16]
 
     def uses_destructive_sync(self) -> bool:
