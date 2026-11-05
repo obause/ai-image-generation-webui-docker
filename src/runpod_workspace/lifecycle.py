@@ -55,7 +55,7 @@ class Lifecycle:
             pod = matches[0]
             if (
                 pod.get("image") != self.config.runpod.wrapper_image
-                or pod.get("gpu", {}).get("id") != self.config.runpod.gpu.id
+                or pod.get("gpu", {}).get("id") not in self.config.runpod.gpu.ordered_ids()
             ):
                 raise LifecycleError("same-name Pod has different image or GPU; refusing to adopt")
             self.store.save(
@@ -63,7 +63,7 @@ class Lifecycle:
                     str(pod["id"]),
                     self.config.fingerprint(),
                     self.config.runpod.template_id,
-                    self.config.runpod.gpu.id,
+                    str(pod["gpu"]["id"]),
                 )
             )
             return pod
@@ -82,17 +82,7 @@ class Lifecycle:
             else:
                 if self.config.runpod.template_id:
                     self.client.get_template(self.config.runpod.template_id)
-                gpu = self.client.get_gpu(
-                    self.config.runpod.gpu.id,
-                    self.config.runpod.gpu.count,
-                    self.config.runpod.cloud,
-                    self.config.runpod.gpu.min_cuda_version,
-                )
-                if gpu.get("availability") == "NONE":
-                    raise LifecycleError(
-                        f"exact GPU {self.config.runpod.gpu.id} is unavailable in "
-                        f"{self.config.runpod.cloud}; no alternate GPU selected"
-                    )
+                selected_gpu = self.select_gpu(progress)
                 for key in ("B2_POD_APPLICATION_KEY_ID", "B2_POD_APPLICATION_KEY"):
                     if not os.environ.get(key):
                         raise LifecycleError(f"{key} is missing")
@@ -122,19 +112,40 @@ class Lifecycle:
                     self.client.ensure_secret(
                         f"{prefix}_web_password", os.environ["WORKSPACE_WEB_PASSWORD"]
                     )
-                pod = self.client.create_pod(self.config)
+                pod = self.client.create_pod(self.config, gpu_id=selected_gpu)
                 self.store.save(
                     State.new(
                         str(pod["id"]),
                         self.config.fingerprint(),
                         self.config.runpod.template_id,
-                        self.config.runpod.gpu.id,
+                        selected_gpu,
                     )
                 )
                 progress(f"Created Pod {pod['id']}; state saved")
         if wait:
             return self.wait_ready(str(pod["id"]), progress)
         return pod
+
+    def select_gpu(self, progress: Callable[[str], None] = print) -> str:
+        """Choose the first explicitly configured GPU with catalog availability."""
+        checked: list[str] = []
+        for gpu_id in self.config.runpod.gpu.ordered_ids():
+            gpu = self.client.get_gpu(
+                gpu_id,
+                self.config.runpod.gpu.count,
+                self.config.runpod.cloud,
+                self.config.runpod.gpu.min_cuda_version,
+            )
+            availability = str(gpu.get("availability", "UNKNOWN"))
+            checked.append(f"{gpu_id}: {availability}")
+            if availability in ("LOW", "MEDIUM", "HIGH"):
+                price = gpu.get("price", {}).get(self.config.runpod.cloud.lower())
+                suffix = f"; catalog ${price}/GPU-hour" if isinstance(price, (int, float)) else ""
+                progress(f"Selected GPU: {gpu_id} ({availability} availability{suffix})")
+                return gpu_id
+        raise LifecycleError(
+            f"No configured GPU is available in {self.config.runpod.cloud}: " + "; ".join(checked)
+        )
 
     def wait_ready(self, pod_id: str, progress: Callable[[str], None] = print) -> dict[str, Any]:
         deadline = time.monotonic() + self.config.runpod.wait_timeout_seconds

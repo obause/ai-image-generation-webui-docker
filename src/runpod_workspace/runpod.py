@@ -136,7 +136,7 @@ class RunPodClient:
         else:
             self._request("POST", "/account/secrets", json={"name": name, "value": value})
 
-    def create_pod(self, config: Config) -> dict[str, Any]:
+    def create_pod(self, config: Config, gpu_id: str | None = None) -> dict[str, Any]:
         rp = config.runpod
         prefix = rp.secret_prefix
         env = {
@@ -153,7 +153,10 @@ class RunPodClient:
             env["HF_TOKEN"] = f"{{{{ RUNPOD_SECRET_{prefix}_hf }}}}"
         if os.environ.get("WORKSPACE_WEB_PASSWORD"):
             env["WORKSPACE_WEB_PASSWORD"] = f"{{{{ RUNPOD_SECRET_{prefix}_web_password }}}}"
-        gpu_request: dict[str, Any] = {"id": rp.gpu.id, "count": rp.gpu.count}
+        chosen_gpu = gpu_id or rp.gpu.id
+        if chosen_gpu not in rp.gpu.ordered_ids():
+            raise RunPodError("selected GPU is not configured")
+        gpu_request: dict[str, Any] = {"id": chosen_gpu, "count": rp.gpu.count}
         if rp.gpu.min_cuda_version:
             gpu_request["minCudaVersion"] = rp.gpu.min_cuda_version
         body = {

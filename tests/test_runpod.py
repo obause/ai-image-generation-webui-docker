@@ -46,6 +46,22 @@ def test_create_pod_without_template(config: Config) -> None:
     assert bodies[0]["gpu"]["minCudaVersion"] == "12.8"
 
 
+def test_create_pod_uses_selected_configured_alternative(config: Config) -> None:
+    config.runpod.gpu.alternatives = ["NVIDIA RTX 6000 Ada Generation"]
+    bodies: list[dict] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(201, json={"id": "pod123"})
+
+    with RunPodClient("key", httpx.MockTransport(respond)) as client:
+        client.create_pod(config, gpu_id="NVIDIA RTX 6000 Ada Generation")
+        with pytest.raises(RunPodError, match="not configured"):
+            client.create_pod(config, gpu_id="NVIDIA H100 80GB HBM3")
+    assert len(bodies) == 1
+    assert bodies[0]["gpu"]["id"] == "NVIDIA RTX 6000 Ada Generation"
+
+
 def test_log_stream_redacts_local_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("B2_APPLICATION_KEY", "very-private-test-value")
     monkeypatch.setenv("CIVITAI_API_TOKEN", "very-private-civitai-value")

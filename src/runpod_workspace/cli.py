@@ -156,15 +156,20 @@ def doctor(ctx: typer.Context) -> None:
                     typer.echo(f"Template image: {template.get('image', 'unknown')}")
                 else:
                     typer.echo("Template: omitted; using wrapper image directly")
-                gpu = client.get_gpu(
-                    config.runpod.gpu.id,
-                    config.runpod.gpu.count,
-                    config.runpod.cloud,
-                    config.runpod.gpu.min_cuda_version,
-                )
-                availability = gpu.get("availability", "unknown")
-                typer.echo(f"GPU: {gpu.get('id')} availability {availability}")
-                ok &= availability != "NONE"
+                any_available = False
+                for gpu_id in config.runpod.gpu.ordered_ids():
+                    gpu = client.get_gpu(
+                        gpu_id,
+                        config.runpod.gpu.count,
+                        config.runpod.cloud,
+                        config.runpod.gpu.min_cuda_version,
+                    )
+                    availability = str(gpu.get("availability", "unknown"))
+                    price = gpu.get("price", {}).get(config.runpod.cloud.lower())
+                    price_text = f"; ${price}/GPU-hour" if isinstance(price, (int, float)) else ""
+                    typer.echo(f"GPU {gpu_id}: {availability}{price_text}")
+                    any_available |= availability in ("LOW", "MEDIUM", "HIGH")
+                ok &= any_available
                 ssh_keys = client.get_ssh_keys()
                 keys = ssh_keys.get("keys", ssh_keys) if isinstance(ssh_keys, dict) else ssh_keys
                 typer.echo(
@@ -218,7 +223,10 @@ def up(
         typer.echo(f"Pod name: {config.runpod.pod_name}")
         typer.echo(f"Template: {config.runpod.template_id or 'none (direct image)'}")
         typer.echo(f"Wrapper image: {config.runpod.wrapper_image}")
-        typer.echo(f"GPU: {config.runpod.gpu.count} x {config.runpod.gpu.id}")
+        typer.echo(
+            f"GPU candidates (in order): {', '.join(config.runpod.gpu.ordered_ids())} "
+            f"({config.runpod.gpu.count} GPU per Pod)"
+        )
         typer.echo(f"Cloud: {config.runpod.cloud}")
         typer.echo(f"Ephemeral disk: {config.runpod.disk_gb} GB")
         typer.echo(f"Restore: {', '.join(m.name for m in config.storage.restore)}")
@@ -236,7 +244,9 @@ def up(
                 )
             pod = life.up(wait=not no_wait)
         typer.echo(f"Pod: {pod['id']}")
-        typer.echo(f"GPU: {config.runpod.gpu.id}")
+        saved = life.store.load()
+        gpu_id = (pod.get("gpu") or {}).get("id") or (saved.gpu_id if saved else "unknown")
+        typer.echo(f"GPU: {gpu_id}")
         typer.echo(f"Bootstrap: {'completed' if not no_wait else 'pending'}")
         for url in proxy_urls(str(pod["id"]), pod.get("ports") or config.runpod.ports):
             typer.echo(f"URL: {url}")

@@ -2,10 +2,13 @@ runpod:
   # Optional: omit when creating directly from the wrapper image.
   # template_id: "<RUNPOD_TEMPLATE_ID>"
   # Publish this tag from the GitHub release workflow before creating a Pod.
-  wrapper_image: "ghcr.io/obause/ai-image-generation-webui-docker:0.1.8"
+  wrapper_image: "ghcr.io/obause/ai-image-generation-webui-docker:0.1.9"
   pod_name: "personal-gpu-workspace"
   gpu:
     id: "NVIDIA GeForce RTX 5090"  # validate availability with rp doctor
+    alternatives:
+      - "NVIDIA GeForce RTX 4090"
+      - "NVIDIA RTX 6000 Ada Generation"
     count: 1
     min_cuda_version: "12.8"
   cloud: SECURE  # selected RTX 5090 cloud; check live availability with rp doctor

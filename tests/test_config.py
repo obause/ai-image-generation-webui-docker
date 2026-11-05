@@ -10,6 +10,38 @@ def test_valid_defaults(config: Config) -> None:
     assert config.storage.backup[0].mode == "copy"
     assert config.storage.restore[0].mode == "copy"
     assert duration_seconds(config.runpod.terminate_after) == 28800
+    assert config.runpod.gpu.ordered_ids() == ["NVIDIA GeForce RTX 4090"]
+
+
+def test_ordered_gpu_alternatives(config: Config) -> None:
+    raw = config.model_dump()
+    raw["runpod"]["gpu"]["alternatives"] = [
+        "NVIDIA GeForce RTX 5090",
+        "NVIDIA RTX 6000 Ada Generation",
+    ]
+    changed = Config.model_validate(raw)
+    assert changed.runpod.gpu.ordered_ids() == [
+        "NVIDIA GeForce RTX 4090",
+        "NVIDIA GeForce RTX 5090",
+        "NVIDIA RTX 6000 Ada Generation",
+    ]
+
+
+@pytest.mark.parametrize(
+    "alternatives",
+    [
+        ["NVIDIA GeForce RTX 4090"],
+        ["NVIDIA GeForce RTX 5090", "NVIDIA GeForce RTX 5090"],
+        [""],
+        ["<GPU_ID>"],
+        [" NVIDIA GeForce RTX 5090"],
+    ],
+)
+def test_invalid_gpu_alternatives(config: Config, alternatives: list[str]) -> None:
+    raw = config.model_dump()
+    raw["runpod"]["gpu"]["alternatives"] = alternatives
+    with pytest.raises(ValidationError):
+        Config.model_validate(raw)
 
 
 @pytest.mark.parametrize(

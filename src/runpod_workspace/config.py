@@ -34,15 +34,36 @@ class StrictModel(BaseModel):
 
 class GPU(StrictModel):
     id: str = Field(min_length=1)
+    alternatives: list[str] = Field(default_factory=list)
     count: int = Field(default=1, ge=1)
     min_cuda_version: str | None = None
 
     @field_validator("id")
     @classmethod
     def real_id(cls, value: str) -> str:
-        if value.startswith("<"):
+        if not value.strip() or value != value.strip() or value.startswith("<"):
             raise ValueError("replace the GPU ID placeholder")
         return value
+
+    @field_validator("alternatives")
+    @classmethod
+    def valid_alternatives(cls, values: list[str]) -> list[str]:
+        if any(
+            not value.strip() or value != value.strip() or value.startswith("<") for value in values
+        ):
+            raise ValueError("GPU alternatives must be exact catalog IDs")
+        if len(values) != len(set(values)):
+            raise ValueError("GPU alternatives must be unique")
+        return values
+
+    @model_validator(mode="after")
+    def no_duplicate_preferred(self) -> GPU:
+        if self.id in self.alternatives:
+            raise ValueError("preferred GPU cannot also be an alternative")
+        return self
+
+    def ordered_ids(self) -> list[str]:
+        return [self.id, *self.alternatives]
 
     @field_validator("min_cuda_version")
     @classmethod

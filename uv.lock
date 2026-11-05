@@ -618,7 +618,7 @@ wheels = [
 
 [[package]]
 name = "runpod-workspace"
-version = "0.1.8"
+version = "0.1.9"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
